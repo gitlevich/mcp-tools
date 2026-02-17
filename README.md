@@ -1,15 +1,15 @@
 # mcp-tools
 
-Two MCP (Model Context Protocol) servers for use with Claude Code and Cursor: semantic code search and AST-aware symbol renaming.
+Two MCP (Model Context Protocol) servers for use with Claude Code and Cursor: semantic project search and AST-aware symbol renaming.
 
 ## Servers
 
 ### project-embed
 
-Semantic code search powered by OpenAI embeddings and ChromaDB. Indexes your project's `.py`, `.ts`, `.tsx`, and `.md` files into a local vector database, then answers natural language queries by returning the most relevant code chunks.
+Semantic project search powered by OpenAI embeddings and ChromaDB. Indexes your project's `.py`, `.ts`, `.tsx`, and `.md` files into a local vector database, then answers natural language queries by returning the most relevant chunks from code and documentation.
 
 **Tools exposed:**
-- `search_code(query, top_k=10)` — find code by meaning, not keywords
+- `search(query, top_k=10)` — find relevant code and docs by meaning, not keywords
 - `index_status()` — check indexing state
 - `reindex()` — force full rebuild
 

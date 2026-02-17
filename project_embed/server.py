@@ -22,11 +22,11 @@ def get_index() -> CodeIndex:
 
 
 @mcp.tool()
-def search_code(query: str, top_k: int = DEFAULT_TOP_K) -> str:
-    """Search the codebase by semantic similarity.
+def search(query: str, top_k: int = DEFAULT_TOP_K) -> str:
+    """Search the project by semantic similarity.
 
-    Takes a natural language query and returns the most relevant code chunks
-    with file paths, line numbers, and content.
+    Takes a natural language query and returns the most relevant chunks
+    from code and documentation, with file paths, line numbers, and content.
 
     Args:
         query: Natural language description of what to find.
@@ -58,7 +58,7 @@ def search_code(query: str, top_k: int = DEFAULT_TOP_K) -> str:
 
 @mcp.tool()
 def index_status() -> str:
-    """Report the current state of the code search index.
+    """Report the current state of the search index.
 
     Returns total files indexed, total chunks, last scan time,
     and count of files pending re-index.
@@ -76,7 +76,7 @@ def index_status() -> str:
 
 @mcp.tool()
 def reindex() -> str:
-    """Force a full re-index of the codebase.
+    """Force a full re-index of the project.
 
     Drops the existing index and rebuilds from scratch.
     Use when the index seems stale or corrupted.
