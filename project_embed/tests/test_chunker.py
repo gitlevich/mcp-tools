@@ -1,0 +1,234 @@
+import sys
+from pathlib import Path
+
+# Allow imports from the parent package
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from chunker import Chunk, chunk_file, strip_specstory, _chunk_code, _chunk_markdown, _overlap_split
+from config import CHUNK_SIZE_CHARS
+
+
+def test_chunk_small_python_file(tmp_path: Path):
+    f = tmp_path / "small.py"
+    f.write_text("def hello():\n    return 'world'\n")
+
+    chunks = chunk_file(f, tmp_path)
+
+    assert len(chunks) == 1
+    assert chunks[0].rel_path == "small.py"
+    assert chunks[0].file_type == "python"
+    assert chunks[0].start_line == 1
+    assert chunks[0].chunk_index == 0
+    assert "def hello" in chunks[0].text
+
+
+def test_chunk_code_splits_on_double_newline():
+    block_a = "def foo():\n    pass"
+    block_b = "def bar():\n    pass"
+    text = block_a + "\n\n" + block_b
+
+    chunks = _chunk_code(text)
+
+    # Small enough to merge into one chunk
+    assert len(chunks) == 1
+    assert "foo" in chunks[0][0]
+    assert "bar" in chunks[0][0]
+
+
+def test_chunk_code_splits_large_segments():
+    # Create two segments each larger than CHUNK_SIZE_CHARS
+    big_a = "# block a\n" + ("x = 1\n" * 400)
+    big_b = "# block b\n" + ("y = 2\n" * 400)
+    text = big_a + "\n\n" + big_b
+
+    chunks = _chunk_code(text)
+
+    assert len(chunks) >= 2
+    # Each chunk should respect size limit (with some tolerance for overlap)
+    for chunk_text, start, end in chunks:
+        assert start >= 1
+        assert end >= start
+
+
+def test_chunk_markdown_splits_on_headings():
+    text = "# Title\n\nSome intro.\n\n## Section A\n\nContent A.\n\n## Section B\n\nContent B.\n"
+
+    chunks = _chunk_markdown(text)
+
+    assert len(chunks) == 3
+    assert "Title" in chunks[0][0]
+    assert "Section A" in chunks[1][0]
+    assert "Section B" in chunks[2][0]
+
+
+def test_chunk_markdown_preamble_before_heading():
+    text = "Some preamble text.\n\n# First Heading\n\nBody.\n"
+
+    chunks = _chunk_markdown(text)
+
+    assert len(chunks) == 2
+    assert "preamble" in chunks[0][0]
+    assert "First Heading" in chunks[1][0]
+
+
+def test_chunk_markdown_no_headings():
+    text = "Just plain text with no headings.\nLine two.\n"
+
+    chunks = _chunk_markdown(text)
+
+    assert len(chunks) == 1
+    assert "plain text" in chunks[0][0]
+
+
+def test_overlap_split_produces_overlapping_pieces():
+    text = "a" * (CHUNK_SIZE_CHARS * 3)
+
+    pieces = _overlap_split(text, 1)
+
+    assert len(pieces) >= 3
+    for chunk_text, start, end in pieces:
+        assert len(chunk_text) <= CHUNK_SIZE_CHARS
+        assert start >= 1
+
+
+def test_chunk_file_empty_file(tmp_path: Path):
+    f = tmp_path / "empty.py"
+    f.write_text("")
+
+    chunks = chunk_file(f, tmp_path)
+
+    assert chunks == []
+
+
+def test_chunk_file_nonexistent(tmp_path: Path):
+    f = tmp_path / "nope.py"
+
+    chunks = chunk_file(f, tmp_path)
+
+    assert chunks == []
+
+
+def test_chunk_file_typescript(tmp_path: Path):
+    f = tmp_path / "component.tsx"
+    f.write_text("export function App() {\n  return <div>hi</div>\n}\n")
+
+    chunks = chunk_file(f, tmp_path)
+
+    assert len(chunks) == 1
+    assert chunks[0].file_type == "typescript"
+    assert chunks[0].rel_path == "component.tsx"
+
+
+def test_chunk_file_markdown(tmp_path: Path):
+    f = tmp_path / "readme.md"
+    f.write_text("# Hello\n\nWorld.\n")
+
+    chunks = chunk_file(f, tmp_path)
+
+    assert len(chunks) == 1
+    assert chunks[0].file_type == "markdown"
+
+
+def test_chunk_indices_are_sequential(tmp_path: Path):
+    f = tmp_path / "multi.py"
+    # Create content with many segments
+    segments = [f"def func_{i}():\n    pass\n" for i in range(50)]
+    f.write_text("\n\n".join(segments))
+
+    chunks = chunk_file(f, tmp_path)
+
+    for i, chunk in enumerate(chunks):
+        assert chunk.chunk_index == i
+
+
+def test_line_numbers_are_positive(tmp_path: Path):
+    f = tmp_path / "lines.py"
+    f.write_text("a = 1\n\nb = 2\n\nc = 3\n")
+
+    chunks = chunk_file(f, tmp_path)
+
+    for chunk in chunks:
+        assert chunk.start_line >= 1
+        assert chunk.end_line >= chunk.start_line
+
+
+# --- specstory stripping ---
+
+
+def test_strip_specstory_removes_think_blocks():
+    text = "Before.\n\n<think><details><summary>Thought</summary>\nlong reasoning\n</details></think>\n\nAfter."
+    result = strip_specstory(text)
+
+    assert "Before." in result
+    assert "After." in result
+    assert "Thought" not in result
+    assert "long reasoning" not in result
+
+
+def test_strip_specstory_removes_tool_use_blocks():
+    text = '_**User**_\n\nHello.\n\n<tool-use data-tool-type="read" data-tool-name="read_file">\n<details><summary>Tool use</summary>\nJSON stuff\n</details>\n</tool-use>\n\nResponse.'
+    result = strip_specstory(text)
+
+    assert "Hello." in result
+    assert "Response." in result
+    assert "tool-use" not in result
+    assert "JSON stuff" not in result
+
+
+def test_strip_specstory_removes_html_comments():
+    text = "<!-- Generated by SpecStory -->\n\n<!-- cursor Session abc -->\n\n# Title\n\nContent."
+    result = strip_specstory(text)
+
+    assert "Generated by" not in result
+    assert "cursor Session" not in result
+    assert "Title" in result
+    assert "Content." in result
+
+
+def test_strip_specstory_decodes_html_entities():
+    text = "Use &#96;function_name&#96; and &#39;quotes&#39; with &amp; and &lt;tag&gt;."
+    result = strip_specstory(text)
+
+    assert "`function_name`" in result
+    assert "'quotes'" in result
+    assert "& and <tag>" in result
+
+
+def test_strip_specstory_collapses_blank_runs():
+    text = "Line one.\n\n\n\n\n\nLine two."
+    result = strip_specstory(text)
+
+    assert "Line one.\n\nLine two." == result
+
+
+def test_strip_specstory_removes_horizontal_rules():
+    text = "Before.\n\n---\n\nAfter."
+    result = strip_specstory(text)
+
+    assert "---" not in result
+    assert "Before." in result
+    assert "After." in result
+
+
+def test_chunk_file_specstory_strips_noise(tmp_path: Path):
+    specstory = tmp_path / ".specstory" / "history"
+    specstory.mkdir(parents=True)
+    f = specstory / "2026-01-01_conversation.md"
+    f.write_text(
+        "<!-- Generated by SpecStory -->\n\n"
+        "# A conversation\n\n"
+        "_**User**_\n\n"
+        "How does taste learning work?\n\n"
+        "---\n\n"
+        "<think><details><summary>Thought</summary>\nreasoning\n</details></think>\n\n"
+        "_**Agent (model default)**_\n\n"
+        "Taste learning accumulates liked and disliked embeddings into pole vectors.\n"
+    )
+
+    chunks = chunk_file(f, tmp_path)
+
+    assert len(chunks) >= 1
+    full_text = " ".join(c.text for c in chunks)
+    assert "taste learning" in full_text.lower()
+    assert "<think>" not in full_text
+    assert "Generated by" not in full_text

@@ -1,0 +1,18 @@
+[project]
+name = "project-embed-mcp"
+version = "0.1.0"
+description = "MCP server for semantic search across project code and documents"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "chromadb>=0.5.0",
+    "openai>=1.0.0",
+]
+
+[tool.setuptools]
+py-modules = ["config", "chunker", "indexer", "server"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]

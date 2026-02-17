@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "dependencies": {
+    "ts-morph": "^24.0.0"
+  }
+}
