@@ -18,8 +18,8 @@ EXCLUDE_DIRS = {
     "node_modules",
 }
 
-CHUNK_SIZE_CHARS = 1600
-CHUNK_OVERLAP_CHARS = 400
+CHUNK_SIZE_CHARS = 4000
+CHUNK_OVERLAP_CHARS = 800
 
 DEFAULT_TOP_K = 10
 MAX_PER_FILE = 2
@@ -30,3 +30,10 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 COLLECTION_NAME = "thought_chunks"
 
 REFRESH_DEBOUNCE_SECONDS = 60
+
+# -- service daemon --
+
+SERVICE_PORT = int(os.environ.get("THOUGHT_INDEX_PORT", "7821"))
+SERVICE_HOST = "127.0.0.1"
+SERVICE_PID_FILE = Path("/tmp/mcp-tools/thought-index.pid")
+SERVICE_STARTUP_TIMEOUT = 60

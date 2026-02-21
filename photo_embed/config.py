@@ -25,6 +25,15 @@ NICE_VALUE = 15
 
 DEFAULT_TOP_K = 10
 
+# -- notes --
+
+NOTE_EXTENSIONS = {".md", ".txt"}
+NOTE_EXCLUDE_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "node_modules"}
+NOTE_CHUNK_SIZE = 4000
+NOTE_CHUNK_OVERLAP = 800
+NOTE_MAX_PER_FILE = 2
+NOTES_METADATA_FILE = CACHE_DIR / "notes_metadata.json"
+
 DEFAULT_MODELS = ["clip-vit-b-16", "siglip-vit-b-16"]
 
 # -- service daemon --

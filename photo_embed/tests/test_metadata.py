@@ -170,12 +170,12 @@ def test_extract_exif_no_exif(tmp_path):
     from PIL import Image
     img_path = tmp_path / "plain.jpg"
     Image.new("RGB", (10, 10)).save(img_path)
-    text, coords = _extract_exif(img_path)
+    text, coords, _ = _extract_exif(img_path)
     assert text == ""
     assert coords is None
 
 def test_extract_exif_nonexistent():
-    text, coords = _extract_exif(Path("/nonexistent/image.jpg"))
+    text, coords, _ = _extract_exif(Path("/nonexistent/image.jpg"))
     assert text == ""
     assert coords is None
 
@@ -186,20 +186,20 @@ def test_extract_metadata_meaningful_filename(tmp_path):
     from PIL import Image
     img_path = tmp_path / "birthday_party.jpg"
     Image.new("RGB", (10, 10)).save(img_path)
-    text, lat, lon = extract_metadata(img_path)
+    text, lat, lon, _ = extract_metadata(img_path)
     assert "birthday party" in text
 
 def test_extract_metadata_generic_filename(tmp_path):
     from PIL import Image
     img_path = tmp_path / "IMG_1234.jpg"
     Image.new("RGB", (10, 10)).save(img_path)
-    text, lat, lon = extract_metadata(img_path)
+    text, lat, lon, _ = extract_metadata(img_path)
     # Nothing meaningful from filename or EXIF
     # May still have folder path components
     assert "IMG" not in text
 
 def test_extract_metadata_with_extra():
-    text, lat, lon = extract_metadata(
+    text, lat, lon, _ = extract_metadata(
         Path("/photos/img.jpg"),
         extra={
             "title": "Family Reunion",
@@ -223,17 +223,18 @@ def test_extract_metadata_extra_date_used_when_no_exif(tmp_path):
     img_path = tmp_path / "no_exif.jpg"
     Image.new("RGB", (10, 10)).save(img_path)
 
-    text, lat, lon = extract_metadata(img_path, extra={"date": "2023:01:01 00:00:00"})
+    text, lat, lon, date_taken = extract_metadata(img_path, extra={"date": "2023:01:01 00:00:00"})
     assert "January 2023" in text
+    assert date_taken == "2023:01:01 00:00:00"
 
 def test_extract_metadata_empty_for_generic():
     """Generic path with no EXIF and no extra should produce minimal/empty text."""
-    text, lat, lon = extract_metadata(Path("/Users/Pictures/photos/IMG_0001.jpg"))
+    text, lat, lon, _ = extract_metadata(Path("/Users/Pictures/photos/IMG_0001.jpg"))
     # Nothing meaningful: generic folders + numeric filename
     assert text == "" or len(text) < 5
 
 def test_extract_metadata_collapses_whitespace():
-    text, lat, lon = extract_metadata(
+    text, lat, lon, _ = extract_metadata(
         Path("/img.jpg"),
         extra={"title": "  lots   of   spaces  "},
     )
@@ -241,7 +242,7 @@ def test_extract_metadata_collapses_whitespace():
 
 def test_extract_metadata_returns_coordinates_from_extra():
     """GPS from extra dict should be returned as lat/lon."""
-    text, lat, lon = extract_metadata(
+    text, lat, lon, _ = extract_metadata(
         Path("/photos/img.jpg"),
         extra={"latitude": 48.8566, "longitude": 2.3522},
     )
@@ -253,13 +254,13 @@ def test_extract_metadata_no_gps_returns_none(tmp_path):
     from PIL import Image
     img_path = tmp_path / "plain.jpg"
     Image.new("RGB", (10, 10)).save(img_path)
-    text, lat, lon = extract_metadata(img_path)
+    text, lat, lon, _ = extract_metadata(img_path)
     assert lat is None
     assert lon is None
 
 def test_extract_metadata_apple_photos_gps_in_text():
     """Apple Photos GPS should produce a place name in metadata text."""
-    text, lat, lon = extract_metadata(
+    text, lat, lon, _ = extract_metadata(
         Path("/photos/img.jpg"),
         extra={
             "title": "Vacation",

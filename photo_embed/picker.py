@@ -1,8 +1,7 @@
-"""Native macOS Finder folder picker via NSOpenPanel."""
+"""Native macOS Finder folder picker via osascript."""
 
 import logging
 import subprocess
-import sys
 
 logger = logging.getLogger(__name__)
 
@@ -10,39 +9,21 @@ logger = logging.getLogger(__name__)
 def pick_folder(prompt: str = "Select a photo folder") -> str | None:
     """Open a native macOS Finder dialog to pick a folder.
 
-    Runs the dialog in a subprocess to avoid AppKit main-thread issues
-    in the MCP server process. Returns the selected path or None if cancelled.
+    Uses osascript (AppleScript) which has proper GUI access even when
+    called from a background daemon process.
     """
-    script = f"""
-import AppKit
-import objc
-
-panel = AppKit.NSOpenPanel.openPanel()
-panel.setCanChooseDirectories_(True)
-panel.setCanChooseFiles_(False)
-panel.setAllowsMultipleSelection_(False)
-panel.setMessage_("{prompt}")
-panel.setPrompt_("Select")
-
-# Bring the panel to front
-AppKit.NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-
-result = panel.runModal()
-if result == AppKit.NSModalResponseOK:
-    print(panel.URL().path(), end="")
-else:
-    print("", end="")
-"""
+    script = f'POSIX path of (choose folder with prompt "{prompt}")'
     try:
         result = subprocess.run(
-            [sys.executable, "-c", script],
+            ["osascript", "-e", script],
             capture_output=True,
             text=True,
             timeout=120,
         )
-        path = result.stdout.strip()
+        path = result.stdout.strip().rstrip("/")
         if result.returncode != 0:
-            logger.warning("Picker process failed: %s", result.stderr)
+            # User cancelled or dialog failed
+            logger.info("Folder picker cancelled or failed: %s", result.stderr.strip())
             return None
         return path if path else None
     except subprocess.TimeoutExpired:

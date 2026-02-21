@@ -55,6 +55,7 @@ class ImageRecord:
     metadata_text: str = ""
     latitude: float | None = None
     longitude: float | None = None
+    date_taken: str = ""
 
 
 @dataclass
@@ -92,7 +93,7 @@ def _prepare_one(
         preview_thumbnail(path, key)
         thumb_path = model_thumbnail(path, key)
         image = open_for_embedding(thumb_path)
-        meta_text, lat, lon = extract_metadata(path, extra=extra_metadata)
+        meta_text, lat, lon, date_taken = extract_metadata(path, extra=extra_metadata)
         record = ImageRecord(
             path=str(path.resolve()),
             folder=folder,
@@ -102,6 +103,7 @@ def _prepare_one(
             metadata_text=meta_text,
             latitude=lat,
             longitude=lon,
+            date_taken=date_taken,
         )
         return PreparedImage(record=record, image=image)
     except Exception:

@@ -12,6 +12,8 @@ dependencies = [
     "pillow>=10.0.0",
     "pillow-heif>=0.18.0",
     "numpy>=1.26.0",
+    "onnxruntime>=1.17.0",
+    "onnxscript>=0.1.0",
     "pyobjc-framework-Cocoa",
     "reverse_geocode>=1.6.0",
 ]

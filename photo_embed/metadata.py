@@ -150,25 +150,28 @@ def _reverse_geocode(lat: float, lon: float) -> str:
         return ""
 
 
-def _extract_exif(path: Path) -> tuple[str, tuple[float, float] | None]:
+def _extract_exif(path: Path) -> tuple[str, tuple[float, float] | None, str]:
     """Extract text-worthy EXIF fields and GPS coordinates from an image.
 
     Returns:
-        (text, coords) where coords is (lat, lon) or None.
+        (text, coords, raw_date) where coords is (lat, lon) or None
+        and raw_date is the EXIF date string (e.g. "2023:07:15 14:30:00").
     """
     parts = []
     coords = None
+    raw_date = ""
     try:
         with Image.open(path) as img:
             exif = img.getexif()
             if not exif:
-                return "", None
+                return "", None, ""
 
             # Date
             date_val = exif.get(ExifBase.DateTimeOriginal) or exif.get(
                 ExifBase.DateTime
             )
             if date_val:
+                raw_date = str(date_val)
                 formatted = _format_date(str(date_val))
                 if formatted:
                     parts.append(formatted)
@@ -209,12 +212,12 @@ def _extract_exif(path: Path) -> tuple[str, tuple[float, float] | None]:
     except Exception:
         logger.debug("EXIF extraction failed for %s", path, exc_info=True)
 
-    return " ".join(parts), coords
+    return " ".join(parts), coords, raw_date
 
 
 def extract_metadata(
     path: Path, extra: dict | None = None,
-) -> tuple[str, float | None, float | None]:
+) -> tuple[str, float | None, float | None, str]:
     """Build a searchable text string from all available metadata.
 
     Args:
@@ -223,7 +226,9 @@ def extract_metadata(
             Keys: title, people, keywords, date, original_filename, latitude, longitude.
 
     Returns:
-        (metadata_text, latitude, longitude). Latitude/longitude are None when unavailable.
+        (metadata_text, latitude, longitude, date_taken).
+        Latitude/longitude are None when unavailable.
+        date_taken is the raw EXIF date string or empty.
     """
     parts = []
 
@@ -237,8 +242,8 @@ def extract_metadata(
     if folder_text:
         parts.append(folder_text)
 
-    # EXIF (text + GPS)
-    exif_text, coords = _extract_exif(path)
+    # EXIF (text + GPS + date)
+    exif_text, coords, raw_date = _extract_exif(path)
     if exif_text:
         parts.append(exif_text)
 
@@ -269,9 +274,12 @@ def extract_metadata(
             parts.append(" ".join(extra["keywords"]))
         if extra.get("date") and not exif_text:
             # Only use Photos date if EXIF didn't provide one
-            formatted = _format_date(str(extra["date"]))
+            extra_date = str(extra["date"])
+            formatted = _format_date(extra_date)
             if formatted:
                 parts.append(formatted)
+            if not raw_date:
+                raw_date = extra_date
 
     result = " ".join(parts).strip()
     # Collapse whitespace
@@ -279,4 +287,4 @@ def extract_metadata(
 
     lat = coords[0] if coords else None
     lon = coords[1] if coords else None
-    return result, lat, lon
+    return result, lat, lon, raw_date

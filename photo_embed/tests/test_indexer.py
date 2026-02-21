@@ -101,7 +101,7 @@ def test_add_and_scan_folder(_dev, tmp_path, monkeypatch):
     _make_photos(photos_dir, 3)
 
     index.add_folder(str(photos_dir))
-    files, _meta = index.scan_files()
+    files, _meta, _scanned = index.scan_files()
     assert len(files) == 3
 
 
@@ -159,11 +159,13 @@ def test_refresh_no_changes_skips_pipeline(_dev, tmp_path, monkeypatch):
 
     index.refresh()
     stats = index.refresh()
-    assert stats == {"new": 0, "changed": 0, "deleted": 0, "total": 2}
+    assert stats["new"] == 0
+    assert stats["total"] == 2
 
 
 @patch("indexer.get_device", return_value="cpu")
-def test_refresh_detects_deleted(_dev, tmp_path, monkeypatch):
+def test_refresh_never_deletes(_dev, tmp_path, monkeypatch):
+    """Deleting a file from disk must NOT remove it from the index via refresh."""
     index = _make_index(tmp_path, monkeypatch)
 
     photos_dir = tmp_path / "photos"
@@ -174,9 +176,37 @@ def test_refresh_detects_deleted(_dev, tmp_path, monkeypatch):
 
     paths[1].unlink()
     stats = index.refresh()
-    assert stats["deleted"] == 1
-    assert stats["total"] == 2
-    assert index._embeddings["mock-model"].shape == (2, 4)
+    # refresh is append-only: no deletion
+    assert stats["total"] == 3
+    assert index._embeddings["mock-model"].shape == (3, 4)
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_preserves_images_from_inaccessible_folder(_dev, tmp_path, monkeypatch):
+    """Images from an unmounted/inaccessible folder must not be deleted."""
+    index = _make_index(tmp_path, monkeypatch)
+
+    folder_a = tmp_path / "local_photos"
+    folder_a.mkdir()
+    _make_photos(folder_a, 2)
+
+    folder_b = tmp_path / "external_drive"
+    folder_b.mkdir()
+    _make_photos(folder_b, 3)
+
+    index.add_folder(str(folder_a))
+    index.add_folder(str(folder_b))
+    index.refresh()
+    assert len(index._state.images) == 5
+    assert index._embeddings["mock-model"].shape == (5, 4)
+
+    # Simulate unmounted drive by removing the directory
+    import shutil
+    shutil.rmtree(folder_b)
+
+    stats = index.refresh()
+    assert stats["total"] == 5
+    assert index._embeddings["mock-model"].shape == (5, 4)
 
 
 @patch("indexer.get_device", return_value="cpu")
@@ -271,7 +301,8 @@ def test_annotate_unknown_image(_dev, tmp_path, monkeypatch):
 
 
 @patch("indexer.get_device", return_value="cpu")
-def test_annotations_cleaned_on_delete(_dev, tmp_path, monkeypatch):
+def test_annotations_cleaned_on_prune(_dev, tmp_path, monkeypatch):
+    """Annotations are cleaned when images are pruned (explicit action)."""
     index = _make_index(tmp_path, monkeypatch)
 
     photos_dir = tmp_path / "photos"
@@ -280,9 +311,9 @@ def test_annotations_cleaned_on_delete(_dev, tmp_path, monkeypatch):
     index.add_folder(str(photos_dir))
     index.refresh()
 
-    index.annotate(str(paths[1]), "will be deleted")
+    index.annotate(str(paths[1]), "will be pruned")
     paths[1].unlink()
-    index.refresh()
+    index.prune_deleted()
 
     assert index.get_annotations(str(paths[1])) == []
 
@@ -304,6 +335,45 @@ def test_search_boosts_annotated(_dev, tmp_path, monkeypatch):
     assert results[0].path == target
 
 
+# -- prune_deleted --
+
+@patch("indexer.get_device", return_value="cpu")
+def test_prune_deleted_removes_missing(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    paths = _make_photos(photos_dir, 4)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    paths[0].unlink()
+    paths[2].unlink()
+
+    stats = index.prune_deleted()
+    assert stats["pruned"] == 2
+    assert stats["total"] == 2
+    assert index._embeddings["mock-model"].shape == (2, 4)
+    remaining_paths = {r.path for r in index._state.images}
+    assert str(paths[0].resolve()) not in remaining_paths
+    assert str(paths[1].resolve()) in remaining_paths
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_prune_deleted_noop_when_all_exist(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 3)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    stats = index.prune_deleted()
+    assert stats["pruned"] == 0
+    assert stats["total"] == 3
+
+
 # -- full reindex --
 
 @patch("indexer.get_device", return_value="cpu")
@@ -315,10 +385,46 @@ def test_full_reindex(_dev, tmp_path, monkeypatch):
     _make_photos(photos_dir, 4)
     index.add_folder(str(photos_dir))
 
-    stats = index.full_reindex()
+    stats = index.full_reindex(confirm=True)
     assert stats["images"] == 4
     assert "mock-model" in stats["models"]
     assert stats["elapsed"] > 0
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_full_reindex_requires_confirm(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 2)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    import pytest
+    with pytest.raises(ValueError, match="confirm=True"):
+        index.full_reindex()
+
+    # Images should be untouched
+    assert len(index._state.images) == 2
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_reindex_notes_preserves_images(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 3)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+    assert len(index._state.images) == 3
+
+    stats = index.reindex_notes()
+    assert "notes" in stats
+    # Images must remain intact
+    assert len(index._state.images) == 3
+    assert index._embeddings["mock-model"].shape == (3, 4)
 
 
 # -- status --
@@ -361,7 +467,8 @@ def test_meta_embeddings_persisted(_dev, tmp_path, monkeypatch):
 
 
 @patch("indexer.get_device", return_value="cpu")
-def test_meta_embeddings_shrink_on_delete(_dev, tmp_path, monkeypatch):
+def test_meta_embeddings_shrink_on_prune(_dev, tmp_path, monkeypatch):
+    """prune_deleted() shrinks meta embeddings to match remaining images."""
     index = _make_index(tmp_path, monkeypatch)
 
     photos_dir = tmp_path / "photos"
@@ -371,7 +478,9 @@ def test_meta_embeddings_shrink_on_delete(_dev, tmp_path, monkeypatch):
     index.refresh()
 
     paths[1].unlink()
-    index.refresh()
+    stats = index.prune_deleted()
+    assert stats["pruned"] == 1
+    assert stats["total"] == 2
     assert index._meta_embeddings["mock-model"].shape == (2, 4)
 
 
@@ -392,3 +501,184 @@ def test_meta_embeddings_in_search(_dev, tmp_path, monkeypatch):
     for r in results:
         assert "mock-model" in r.model_scores
         assert "mock-model-meta" in r.model_scores
+
+
+# -- progressive search --
+
+@patch("indexer.get_device", return_value="cpu")
+def test_search_progressive_yields_phases(_dev, tmp_path, monkeypatch):
+    """search_progressive yields at least 2 phases with 2 models."""
+    cache = _patch_all(monkeypatch, tmp_path, model_names=("model-a", "model-b"))
+    from indexer import PhotoIndex
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 5)
+
+    index = PhotoIndex(cache)
+    index._state.enabled_models = ["model-a", "model-b"]
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    phases = list(index.search_progressive("sunset", top_k=3))
+    assert len(phases) == 2
+    # Both phases return result lists
+    assert len(phases[0]) == 3
+    assert len(phases[1]) == 3
+    # Final phase includes scores from both models
+    for r in phases[1]:
+        assert "model-a" in r.model_scores
+        assert "model-b" in r.model_scores
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_search_progressive_single_model(_dev, tmp_path, monkeypatch):
+    """With 1 model, yields 2 phases (after model + after keyword signals)."""
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 3)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    phases = list(index.search_progressive("test", top_k=3))
+    assert len(phases) == 2
+    assert len(phases[-1]) == 3
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_search_progressive_empty_index(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+    phases = list(index.search_progressive("anything"))
+    assert phases == []
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_search_progressive_matches_search(_dev, tmp_path, monkeypatch):
+    """Final phase of progressive search should match regular search."""
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 5)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    # Fix random seed so both calls produce same results
+    np.random.seed(42)
+    regular = index.search("beach", top_k=5)
+    np.random.seed(42)
+    phases = list(index.search_progressive("beach", top_k=5))
+    final = phases[-1]
+
+    assert len(regular) == len(final)
+    for r1, r2 in zip(regular, final):
+        assert r1.path == r2.path
+        assert r1.score == r2.score
+
+
+# -- date filter parsing --
+
+from indexer import _parse_date_filter, _year_from_date_taken
+
+
+def test_parse_date_filter_single_year():
+    q, y1, y2 = _parse_date_filter("New York City 2010")
+    assert q == "New York City"
+    assert y1 == 2010
+    assert y2 == 2010
+
+
+def test_parse_date_filter_year_range():
+    q, y1, y2 = _parse_date_filter("beach 2015-2020")
+    assert q == "beach"
+    assert y1 == 2015
+    assert y2 == 2020
+
+
+def test_parse_date_filter_decade():
+    q, y1, y2 = _parse_date_filter("wedding 2010s")
+    assert q == "wedding"
+    assert y1 == 2010
+    assert y2 == 2019
+
+
+def test_parse_date_filter_no_date():
+    q, y1, y2 = _parse_date_filter("sunset at the beach")
+    assert q == "sunset at the beach"
+    assert y1 is None
+    assert y2 is None
+
+
+def test_parse_date_filter_year_at_start():
+    q, y1, y2 = _parse_date_filter("2023 birthday party")
+    assert q == "birthday party"
+    assert y1 == 2023
+    assert y2 == 2023
+
+
+def test_parse_date_filter_range_reversed():
+    q, y1, y2 = _parse_date_filter("photos 2020-2015")
+    assert q == "photos"
+    assert y1 == 2015
+    assert y2 == 2020
+
+
+def test_parse_date_filter_only_year():
+    q, y1, y2 = _parse_date_filter("2010")
+    assert q == ""
+    assert y1 == 2010
+    assert y2 == 2010
+
+
+def test_year_from_date_taken_valid():
+    assert _year_from_date_taken("2023:07:15 14:30:00") == 2023
+
+
+def test_year_from_date_taken_empty():
+    assert _year_from_date_taken("") is None
+
+
+def test_year_from_date_taken_invalid():
+    assert _year_from_date_taken("not-a-date") is None
+
+
+# -- batch reverse geocode --
+
+from indexer import _batch_reverse_geocode
+
+
+def test_batch_reverse_geocode_returns_locations():
+    coords = [(48.8566, 2.3522), (40.7128, -74.0060)]  # Paris, NYC
+    locations = _batch_reverse_geocode(coords)
+    assert len(locations) == 2
+    assert "Paris" in locations[0]
+    assert "New York" in locations[1]
+
+
+def test_batch_reverse_geocode_empty():
+    assert _batch_reverse_geocode([]) == []
+
+
+# -- search results include location --
+
+@patch("indexer.get_device", return_value="cpu")
+def test_search_results_include_location(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 2)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    # Inject GPS coordinates into image records
+    index._state.images[0].latitude = 48.8566
+    index._state.images[0].longitude = 2.3522
+
+    results = index.search("test", top_k=2)
+    paris_result = [r for r in results if "Paris" in r.location]
+    assert len(paris_result) == 1
+    no_loc_result = [r for r in results if r.location == ""]
+    assert len(no_loc_result) == 1

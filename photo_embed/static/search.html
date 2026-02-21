@@ -55,11 +55,16 @@
   }
   .search-input:focus { border-color: var(--blue); }
   .search-input::placeholder { color: var(--text-dim); }
+  .search-btn-group {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+  }
   .search-btn {
     background: var(--blue);
     color: #000;
     border: none;
-    border-radius: 6px;
+    border-radius: 6px 0 0 6px;
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
     font-weight: 500;
@@ -67,6 +72,50 @@
   }
   .search-btn:hover { opacity: 0.9; }
   .search-btn:disabled { opacity: 0.5; cursor: wait; }
+  .search-btn.notes-only { background: var(--green); }
+  .search-opts-toggle {
+    background: var(--blue);
+    color: #000;
+    border: none;
+    border-left: 1px solid rgba(0,0,0,0.2);
+    border-radius: 0 6px 6px 0;
+    padding: 0 0.45rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    font-size: 0.6rem;
+  }
+  .search-opts-toggle:hover { opacity: 0.9; }
+  .search-opts-toggle.notes-only { background: var(--green); }
+  .search-opts-popup {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    z-index: 25;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    white-space: nowrap;
+  }
+  .search-opts-popup.visible { display: block; }
+  .search-opts-popup label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0.2rem 0;
+  }
+  .search-opts-popup input[type="checkbox"] {
+    accent-color: var(--blue);
+  }
+  .search-opts-popup input#optNotes {
+    accent-color: var(--green);
+  }
   .search-meta {
     font-size: 0.8rem;
     color: var(--text-dim);
@@ -83,7 +132,24 @@
   .search-wrapper .search-input {
     max-width: none;
     width: 100%;
+    padding-right: 1.8rem;
   }
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 0;
+    display: none;
+    z-index: 10;
+    border-radius: 3px;
+  }
+  .search-clear:hover { color: var(--text); background: rgba(255,255,255,0.08); }
   .search-dropdown {
     display: none;
     position: absolute;
@@ -145,9 +211,173 @@
     color: var(--blue);
   }
 
-  /* Results grid */
+  /* Main content layout */
+  .content-area {
+    display: flex;
+    min-height: calc(100vh - 60px);
+  }
+
+  /* Results grid (left / main) */
   .results {
-    padding: 1.25rem 2rem 4rem;
+    flex: 1;
+    padding: 1.25rem 1.5rem 4rem 2rem;
+    min-width: 0;
+    transition: flex 0.35s ease, width 0.35s ease, padding 0.35s ease;
+  }
+
+  /* Notes sidebar (right) */
+  .notes-section {
+    display: none;
+    width: 280px;
+    flex-shrink: 0;
+    padding: 0.75rem 1rem 4rem 0;
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    max-height: calc(100vh - 60px);
+    position: sticky;
+    top: 60px;
+    transition: width 0.35s ease, flex 0.35s ease, padding 0.35s ease;
+  }
+  .notes-section.visible { display: block; }
+
+  /* Note-focus mode: photos fold left, notes expand */
+  .content-area.note-focus .results {
+    flex: 0 0 220px;
+    width: 220px;
+    padding: 0.75rem 0.5rem 4rem 0.75rem;
+    overflow-y: auto;
+    max-height: calc(100vh - 60px);
+    position: sticky;
+    top: 60px;
+    border-right: 1px solid var(--border);
+  }
+  .content-area.note-focus .results .grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .content-area.note-focus .results .card-info { display: none; }
+  .content-area.note-focus .notes-section {
+    flex: 1;
+    width: auto;
+    border-left: none;
+    padding: 1.25rem 2rem 4rem 1.5rem;
+  }
+
+  /* Note reader overlay */
+  .note-reader {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.92);
+    justify-content: center;
+    align-items: flex-start;
+    padding: 3rem 2rem;
+    overflow-y: auto;
+    cursor: default;
+  }
+  .note-reader.active { display: flex; }
+  .note-reader-content {
+    max-width: 700px;
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2rem 2.5rem;
+  }
+  .note-reader-path {
+    font-size: 0.7rem;
+    color: var(--blue);
+    margin-bottom: 1rem;
+  }
+  .note-reader-text {
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .note-reader-close {
+    position: fixed;
+    top: 1rem;
+    right: 1.5rem;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.5rem;
+    cursor: pointer;
+    z-index: 101;
+  }
+  .note-reader-close:hover { color: var(--text); }
+
+  /* Active note card highlight */
+  .note-card.active {
+    border-left-color: var(--green);
+    background: rgba(63, 185, 80, 0.08);
+  }
+  .notes-header {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+    padding-left: 0.5rem;
+  }
+  .notes-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .note-card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--blue);
+    border-radius: 4px;
+    padding: 0.35rem 0.5rem 1rem;
+    cursor: pointer;
+  }
+  .note-card:hover { border-color: var(--blue); }
+  .note-card.expanded .note-card-text {
+    max-height: none;
+    color: var(--text);
+  }
+  .note-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.15rem;
+  }
+  .note-card-path {
+    font-size: 0.6rem;
+    color: var(--blue);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .note-card-score {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    margin-left: 0.3rem;
+  }
+  .note-card-date {
+    position: absolute;
+    bottom: 0.25rem;
+    right: 0.4rem;
+    font-size: 0.5rem;
+    color: var(--text-dim);
+  }
+  .note-card-text {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    line-height: 1.35;
+    max-height: 3.5em;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   .grid {
     display: grid;
@@ -157,7 +387,6 @@
 
   /* Image card */
   .card {
-    position: relative;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -165,6 +394,7 @@
     transition: border-color 0.2s, transform 0.15s;
     cursor: pointer;
   }
+  .card-image-wrap { position: relative; }
   .card-badge {
     position: absolute;
     top: 6px;
@@ -231,6 +461,29 @@
     color: var(--amber, #d29922);
     font-style: italic;
   }
+  .card-meta-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.6));
+    padding: 1.2rem 0.5rem 0.3rem;
+    pointer-events: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 0.3rem;
+    font-size: 0.6rem;
+    color: rgba(255,255,255,0.8);
+    z-index: 0;
+  }
+  .card:hover .card-meta-overlay { opacity: 0; transition: opacity 0.2s; }
+  .card-meta-date, .card-meta-location {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-meta-location { text-align: right; }
   .card-img {
     width: 100%;
     aspect-ratio: 1;
@@ -255,6 +508,11 @@
     gap: 0.5rem;
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
+  }
+  .card-date {
+    color: var(--text-dim);
+    font-size: 0.65rem;
+    margin-top: 0.15rem;
   }
   .card-annotations {
     margin-top: 0.3rem;
@@ -430,8 +688,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    margin-bottom: 0.25rem;
+  }
+  .lightbox-meta {
+    font-size: 0.75rem;
+    color: var(--text-dim);
     margin-bottom: 0.5rem;
   }
+  .lightbox-meta:empty { display: none; }
   .annotation-row {
     display: flex;
     align-items: center;
@@ -506,16 +770,38 @@
       autofocus
       autocomplete="off"
     >
+    <button class="search-clear" id="searchClear" type="button" title="Clear"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="11" y2="11"/><line x1="11" y1="3" x2="3" y2="11"/></svg></button>
     <div class="search-dropdown" id="searchDropdown"></div>
   </div>
-  <button class="search-btn" id="searchBtn" onclick="doSearch()">Search</button>
+  <div class="search-btn-group">
+    <button class="search-btn" id="searchBtn" onclick="doSearch()">Search</button>
+    <button class="search-opts-toggle" id="searchOptsToggle" type="button">&#9662;</button>
+    <div class="search-opts-popup" id="searchOptsPopup">
+      <label><input type="checkbox" id="optPhotos" checked> Photos</label>
+      <label><input type="checkbox" id="optNotes" checked> Notes</label>
+    </div>
+  </div>
   <span class="search-meta" id="searchMeta"></span>
 </div>
 
+<div class="content-area">
 <div class="results" id="results">
   <div class="empty-state">
     <h2>Search your photos</h2>
     <p>Type a description like "sunset at the beach" or "birthday party"</p>
+  </div>
+</div>
+<div class="notes-section" id="notesSection">
+  <div class="notes-header" id="notesHeader">Notes</div>
+  <div class="notes-grid" id="notesGrid"></div>
+</div>
+</div>
+
+<div class="note-reader" id="noteReader" onclick="closeNoteReader(event)">
+  <button class="note-reader-close" onclick="closeNoteReader()">&times;</button>
+  <div class="note-reader-content" onclick="event.stopPropagation()">
+    <div class="note-reader-path" id="noteReaderPath"></div>
+    <div class="note-reader-text" id="noteReaderText"></div>
   </div>
 </div>
 
@@ -527,6 +813,7 @@
   </div>
   <div class="status-body">
     <span><span class="stat-label">Images: </span><span class="stat-value" id="statImages">--</span></span>
+    <span><span class="stat-label">Notes: </span><span class="stat-value" id="statChunks">--</span></span>
     <span><span class="stat-label">Models: </span><span class="stat-value" id="statModels">--</span></span>
     <span class="status-folders" id="statFolders"></span>
     <span class="status-activity" id="statActivity"></span>
@@ -539,6 +826,7 @@
   <img id="lightboxImg">
   <div class="lightbox-panel" onclick="event.stopPropagation()">
     <div class="lightbox-path" id="lightboxPath"></div>
+    <div class="lightbox-meta" id="lightboxMeta"></div>
     <div class="annotation-row" id="annotationRow">
       <input
         class="annotation-input"
@@ -554,6 +842,37 @@
 const queryInput = document.getElementById('query');
 const searchBtn = document.getElementById('searchBtn');
 const searchMeta = document.getElementById('searchMeta');
+const searchOptsToggle = document.getElementById('searchOptsToggle');
+const searchOptsPopup = document.getElementById('searchOptsPopup');
+const optPhotos = document.getElementById('optPhotos');
+const optNotes = document.getElementById('optNotes');
+const searchClear = document.getElementById('searchClear');
+
+function updateClearBtn() {
+  searchClear.style.display = queryInput.value ? 'block' : 'none';
+}
+queryInput.addEventListener('input', updateClearBtn);
+searchClear.addEventListener('click', () => {
+  queryInput.value = '';
+  updateClearBtn();
+  queryInput.focus();
+});
+updateClearBtn();
+
+function updateBtnColor() {
+  const notesOnly = optNotes.checked && !optPhotos.checked;
+  searchBtn.classList.toggle('notes-only', notesOnly);
+  searchOptsToggle.classList.toggle('notes-only', notesOnly);
+}
+optPhotos.addEventListener('change', updateBtnColor);
+optNotes.addEventListener('change', updateBtnColor);
+
+searchOptsToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  searchOptsPopup.classList.toggle('visible');
+});
+searchOptsPopup.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => searchOptsPopup.classList.remove('visible'));
 const resultsDiv = document.getElementById('results');
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightboxImg');
@@ -561,6 +880,10 @@ const lightboxPath = document.getElementById('lightboxPath');
 const annotationRow = document.getElementById('annotationRow');
 const annotationInput = document.getElementById('annotationInput');
 let _lightboxResult = null;
+const PAGE_SIZE = 50;
+let _allResults = [];
+let _displayedCount = 0;
+let _loadingMore = false;
 
 const searchDropdown = document.getElementById('searchDropdown');
 const HISTORY_KEY = 'photo-search-history';
@@ -686,14 +1009,265 @@ queryInput.addEventListener('keydown', (e) => {
   }
 });
 
+let _selectedCardIndex = -1;
+
+function getCards() {
+  return Array.from(document.querySelectorAll('#resultsGrid .card'));
+}
+
+function selectCard(index) {
+  const cards = getCards();
+  if (!cards.length) return;
+  // Deselect previous
+  if (_selectedCardIndex >= 0 && _selectedCardIndex < cards.length) {
+    cards[_selectedCardIndex].style.outline = '';
+  }
+  _selectedCardIndex = Math.max(0, Math.min(index, cards.length - 1));
+  const card = cards[_selectedCardIndex];
+  card.style.outline = '2px solid var(--blue)';
+  card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // Load more if near end
+  if (_selectedCardIndex >= _displayedCount - 4 && _displayedCount < _allResults.length) {
+    showMore();
+    updateSearchMeta(null);
+  }
+}
+
+function getGridColumns() {
+  const grid = document.getElementById('resultsGrid');
+  if (!grid) return 1;
+  return getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+}
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && lightbox.classList.contains('active')
-      && document.activeElement !== annotationInput) {
-    lightbox.classList.remove('active');
-    lightboxImg.src = '';
-    _lightboxResult = null;
+  const inInput = document.activeElement === queryInput || document.activeElement === annotationInput;
+  const inLightbox = lightbox.classList.contains('active');
+
+  // Escape: close overlays in order
+  if (e.key === 'Escape') {
+    if (noteReader.classList.contains('active')) {
+      noteReader.classList.remove('active');
+      return;
+    }
+    if (inLightbox && !inInput) {
+      lightbox.classList.remove('active');
+      lightboxImg.src = '';
+      _lightboxResult = null;
+      return;
+    }
+    if (contentArea.classList.contains('note-focus') && !inInput) {
+      exitNoteFocus();
+      return;
+    }
+  }
+
+  // Skip keyboard nav when typing in inputs
+  if (inInput) return;
+
+  // Lightbox arrow navigation
+  if (inLightbox) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      navigateLightbox(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      navigateLightbox(1);
+      return;
+    }
+    return;
+  }
+
+  // Grid navigation
+  const cards = getCards();
+  if (!cards.length) return;
+
+  const cols = getGridColumns();
+
+  if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    selectCard(_selectedCardIndex < 0 ? 0 : _selectedCardIndex + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    selectCard(_selectedCardIndex < 0 ? 0 : _selectedCardIndex - 1);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    selectCard(_selectedCardIndex < 0 ? 0 : _selectedCardIndex + cols);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    selectCard(_selectedCardIndex < 0 ? 0 : _selectedCardIndex - cols);
+  } else if (e.key === 'Enter' && _selectedCardIndex >= 0) {
+    e.preventDefault();
+    const idx = _selectedCardIndex;
+    if (idx < _allResults.length) openLightbox(_allResults[idx]);
+  } else if (e.key === ' ') {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 });
+
+function navigateLightbox(direction) {
+  if (!_lightboxResult || !_allResults.length) return;
+  const currentIdx = _allResults.findIndex(r => r.path === _lightboxResult.path);
+  if (currentIdx < 0) return;
+  const newIdx = currentIdx + direction;
+  if (newIdx < 0 || newIdx >= _allResults.length) return;
+  // Load more results if near the end
+  if (newIdx >= _displayedCount - 2 && _displayedCount < _allResults.length) {
+    showMore();
+    updateSearchMeta(null);
+  }
+  _selectedCardIndex = newIdx;
+  openLightbox(_allResults[newIdx]);
+}
+
+const notesSection = document.getElementById('notesSection');
+const notesHeader = document.getElementById('notesHeader');
+const notesGrid = document.getElementById('notesGrid');
+
+function _formatLocal(utcDate) {
+  const d = _DAYS[utcDate.getDay()];
+  const mon = _MONTHS[utcDate.getMonth()];
+  const day = utcDate.getDate();
+  const h = String(utcDate.getHours()).padStart(2, '0');
+  const m = String(utcDate.getMinutes()).padStart(2, '0');
+  return `${d} ${mon} ${day}, ${h}:${m}`;
+}
+
+function extractNoteDate(r) {
+  // Try filename: "2026-02-21_0600_name.md"
+  const fnMatch = r.rel_path.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})/);
+  if (fnMatch) {
+    const [, y, mo, d, h, mi] = fnMatch;
+    const utc = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi));
+    return _formatLocal(utc);
+  }
+  // Try "**Date**: 2026-02-21 06:00 UTC" in text
+  const dateMatch = r.text.match(/\*\*Date\*\*:\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (dateMatch) {
+    const [, y, mo, d, h, mi] = dateMatch;
+    const utc = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi));
+    return _formatLocal(utc);
+  }
+  // Try "### User (06:00 UTC)" - no full date, show time only
+  const tsMatch = r.text.match(/###\s+\w+\s+\((\d{2}):(\d{2})\s*UTC\)/);
+  if (tsMatch) {
+    const now = new Date();
+    const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), +tsMatch[1], +tsMatch[2]));
+    return `${String(utc.getHours()).padStart(2, '0')}:${String(utc.getMinutes()).padStart(2, '0')}`;
+  }
+  return '';
+}
+
+function renderNotes(results) {
+  notesGrid.innerHTML = '';
+  if (!results.length) {
+    notesSection.classList.remove('visible');
+    return;
+  }
+  notesHeader.textContent = `Notes (${results.length})`;
+  for (const r of results) {
+    const card = document.createElement('div');
+    card.className = 'note-card';
+    const pathLabel = r.rel_path.split('/').slice(-2).join('/');
+    const noteDate = extractNoteDate(r);
+    card.innerHTML =
+      '<div class="note-card-header">' +
+        '<span class="note-card-path">' + escapeHtml(pathLabel) + ' :' + r.start_line + '-' + r.end_line + '</span>' +
+        '<span class="note-card-score">' + r.score.toFixed(3) + '</span>' +
+      '</div>' +
+      (noteDate ? '<div class="note-card-date">' + escapeHtml(noteDate) + '</div>' : '') +
+      '<div class="note-card-text">' + escapeHtml(r.text) + '</div>';
+    card.onclick = () => enterNoteFocus(r, card);
+    card.ondblclick = () => openNoteReader(r);
+    notesGrid.appendChild(card);
+  }
+  notesSection.classList.add('visible');
+}
+
+const contentArea = document.querySelector('.content-area');
+const noteReader = document.getElementById('noteReader');
+const noteReaderPath = document.getElementById('noteReaderPath');
+const noteReaderText = document.getElementById('noteReaderText');
+let _savedQuery = '';
+
+function enterNoteFocus(note, cardEl) {
+  // Highlight the active card
+  notesGrid.querySelectorAll('.note-card.active').forEach(c => c.classList.remove('active'));
+  cardEl.classList.add('active');
+
+  // Expand the card text inline
+  notesGrid.querySelectorAll('.note-card.expanded').forEach(c => c.classList.remove('expanded'));
+  cardEl.classList.add('expanded');
+
+  // Save current query so we can restore on exit
+  if (!contentArea.classList.contains('note-focus')) {
+    _savedQuery = queryInput.value;
+  }
+
+  // Enter note-focus layout
+  contentArea.classList.add('note-focus');
+
+  // Search photos using the note text
+  const hdrs = { 'Content-Type': 'application/json' };
+  fetch('/search-stream', {
+    method: 'POST', headers: hdrs,
+    body: JSON.stringify({ query: note.text.trim(), top_k: 200 }),
+  }).then(async resp => {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = JSON.parse(line.slice(6));
+          _allResults = data;
+          _lastResults = data;
+          _displayedCount = 0;
+          resultsDiv.innerHTML = '';
+          if (data.length) {
+            const grid = document.createElement('div');
+            grid.className = 'grid';
+            grid.id = 'resultsGrid';
+            resultsDiv.appendChild(grid);
+            showMore();
+          }
+        }
+      }
+    }
+  }).catch(() => {});
+}
+
+function exitNoteFocus() {
+  contentArea.classList.remove('note-focus');
+  notesGrid.querySelectorAll('.note-card.active').forEach(c => c.classList.remove('active'));
+  notesGrid.querySelectorAll('.note-card.expanded').forEach(c => c.classList.remove('expanded'));
+  if (_savedQuery) {
+    queryInput.value = _savedQuery;
+    _savedQuery = '';
+    doSearch();
+  }
+}
+
+function openNoteReader(note) {
+  const pathLabel = note.rel_path.split('/').slice(-2).join('/');
+  noteReaderPath.textContent = pathLabel + ' :' + note.start_line + '-' + note.end_line;
+  noteReaderText.textContent = note.text;
+  noteReader.classList.add('active');
+}
+
+function closeNoteReader(e) {
+  if (e && e.target !== noteReader && !e.target.classList.contains('note-reader-close')) return;
+  noteReader.classList.remove('active');
+}
 
 async function doSearch() {
   const query = queryInput.value.trim();
@@ -702,30 +1276,89 @@ async function doSearch() {
   pushHistory(query);
   searchBtn.disabled = true;
   searchMeta.innerHTML = '<span class="spinner"></span>Searching...';
+  _allResults = [];
+  _displayedCount = 0;
+  _selectedCardIndex = -1;
+  notesSection.classList.remove('visible');
 
+  const hdrs = { 'Content-Type': 'application/json' };
   const t0 = performance.now();
-  try {
-    const resp = await fetch('/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, top_k: 50 }),
-    });
-    const data = await resp.json();
-    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
 
-    if (!data.length) {
+  // Fire thought search independently (if enabled)
+  if (optNotes.checked) {
+    fetch('/search-thoughts', { method: 'POST', headers: hdrs,
+      body: JSON.stringify({ query, top_k: 10 }),
+    }).then(r => r.json()).then(renderNotes).catch(() => {});
+  } else {
+    notesSection.classList.remove('visible');
+  }
+
+  if (!optPhotos.checked) {
+    if (!optNotes.checked) {
+      resultsDiv.innerHTML = '<div class="empty-state"><h2>No search sources selected</h2><p>Enable Photos or Notes in search options</p></div>';
+      searchMeta.textContent = '';
+    } else {
+      resultsDiv.innerHTML = '';
+      searchMeta.textContent = '';
+    }
+    searchBtn.disabled = false;
+    return;
+  }
+
+  try {
+    const resp = await fetch('/search-stream', {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ query, top_k: 200 }),
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = JSON.parse(line.slice(6));
+          const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+
+          _allResults = data;
+          _lastResults = data;
+          _displayedCount = 0;
+          _selectedCardIndex = -1;
+
+          resultsDiv.innerHTML = '';
+          if (data.length) {
+            const grid = document.createElement('div');
+            grid.className = 'grid';
+            grid.id = 'resultsGrid';
+            resultsDiv.appendChild(grid);
+            showMore();
+          }
+          updateSearchMeta(elapsed);
+        }
+      }
+    }
+
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+    if (!_allResults.length) {
       resultsDiv.innerHTML = `
         <div class="empty-state">
-          <h2>No matching photos</h2>
+          <h2>No matching results</h2>
           <p>Try a different description</p>
         </div>`;
       searchMeta.textContent = `0 results (${elapsed}s)`;
-      return;
+    } else {
+      updateSearchMeta(elapsed);
     }
-
-    searchMeta.textContent = `${data.length} results (${elapsed}s)`;
-    _lastResults = data;
-    renderResults(data);
   } catch (e) {
     resultsDiv.innerHTML = `
       <div class="empty-state">
@@ -735,6 +1368,25 @@ async function doSearch() {
     searchMeta.textContent = 'Error';
   } finally {
     searchBtn.disabled = false;
+  }
+}
+
+function showMore() {
+  const grid = document.getElementById('resultsGrid');
+  if (!grid || _displayedCount >= _allResults.length) return;
+  const end = Math.min(_displayedCount + PAGE_SIZE, _allResults.length);
+  const slice = _allResults.slice(_displayedCount, end);
+  appendCards(grid, slice);
+  _displayedCount = end;
+}
+
+function updateSearchMeta(elapsed) {
+  const total = _allResults.length;
+  const shown = _displayedCount;
+  if (shown < total) {
+    searchMeta.textContent = `${shown} of ${total} results` + (elapsed ? ` (${elapsed}s)` : '');
+  } else {
+    searchMeta.textContent = `${total} results` + (elapsed ? ` (${elapsed}s)` : '');
   }
 }
 
@@ -750,10 +1402,35 @@ function filename(path) {
   return parts[parts.length - 1];
 }
 
-function renderResults(results) {
-  const grid = document.createElement('div');
-  grid.className = 'grid';
+const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const _DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function formatDate(exifDate) {
+  // EXIF format: "2023:07:15 14:30:00" -> "Sat Jul 15, 14:30"
+  if (!exifDate) return '';
+  const m = exifDate.match(/(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2})/);
+  if (!m) {
+    const parts = exifDate.split(':');
+    if (parts.length >= 2) {
+      const mon = parseInt(parts[1], 10);
+      if (mon >= 1 && mon <= 12) return `${_MONTHS[mon - 1]} ${parts[0]}`;
+    }
+    return exifDate;
+  }
+  const dt = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const day = _DAYS[dt.getDay()];
+  const mon = _MONTHS[dt.getMonth()];
+  return `${day} ${mon} ${dt.getDate()}, ${m[4]}:${m[5]}`;
+}
 
+function formatDateShort(exifDate) {
+  // Compact format for overlay: "Jul 15, 2023"
+  if (!exifDate) return '';
+  const m = exifDate.match(/(\d{4}):(\d{2}):(\d{2})/);
+  if (!m) return '';
+  return `${_MONTHS[+m[2] - 1]} ${+m[3]}, ${m[1]}`;
+}
+
+function appendCards(grid, results) {
   for (const r of results) {
     const card = document.createElement('div');
     card.className = 'card';
@@ -766,7 +1443,7 @@ function renderResults(results) {
     const anns = r.annotations || [];
     const hasTasks = anns.some(a => a.startsWith('@task '));
     const hasNotes = anns.length > 0;
-    let html = '';
+    let html = '<div class="card-image-wrap">';
     if (hasNotes) {
       const cls = hasTasks ? 'card-badge has-tasks' : 'card-badge';
       html += `<div class="${cls}"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>`;
@@ -778,6 +1455,13 @@ function renderResults(results) {
       html += '</div></div>';
     }
     html += `<img class="card-img" src="${thumbUrl(r.preview_thumbnail)}" loading="lazy" alt="">`;
+    if (r.date_taken || r.location) {
+      html += '<div class="card-meta-overlay">';
+      if (r.date_taken) html += `<span class="card-meta-date">${formatDateShort(r.date_taken)}</span>`;
+      if (r.location) html += `<span class="card-meta-location">${escapeHtml(r.location)}</span>`;
+      html += '</div>';
+    }
+    html += '</div>';
     html += '<div class="card-info">';
     html += `<div class="card-filename" title="${r.path}">${filename(r.path)}</div>`;
     html += `<div class="card-scores">${scores}</div>`;
@@ -786,18 +1470,31 @@ function renderResults(results) {
     card.innerHTML = html;
     grid.appendChild(card);
   }
-
-  resultsDiv.innerHTML = '';
-  resultsDiv.appendChild(grid);
 }
 
 function openLightbox(result) {
   _lightboxResult = result;
   lightboxImg.src = thumbUrl(result.preview_thumbnail);
   lightboxPath.textContent = result.path;
+  const metaParts = [];
+  if (result.date_taken) metaParts.push(formatDate(result.date_taken));
+  if (result.location) metaParts.push(result.location);
+  document.getElementById('lightboxMeta').textContent = metaParts.join(' \u2014 ');
   lightbox.classList.add('active');
   annotationInput.value = '';
   loadAnnotations(result.path);
+  searchNotesForImage(result);
+}
+
+function searchNotesForImage(result) {
+  // Build a query from the image's annotations and filename
+  const anns = (result.annotations || []).filter(a => !a.startsWith('@task '));
+  const name = filename(result.path).replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+  const query = anns.length ? anns.join(' ') : name;
+  const hdrs = { 'Content-Type': 'application/json' };
+  fetch('/search-thoughts', { method: 'POST', headers: hdrs,
+    body: JSON.stringify({ query, top_k: 10 }),
+  }).then(r => r.json()).then(renderNotes).catch(() => {});
 }
 
 function closeLightbox(e) {
@@ -937,17 +1634,18 @@ function updateCardAnnotations(result, shouldGlow) {
   for (const card of cards) {
     const fn = card.querySelector('.card-filename');
     if (fn && fn.title === result.path) {
+      const wrap = card.querySelector('.card-image-wrap');
       const anns = result.annotations || [];
       const hasTasks = anns.some(a => a.startsWith('@task '));
-      let badge = card.querySelector('.card-badge');
-      let overlay = card.querySelector('.card-overlay');
+      let badge = wrap.querySelector('.card-badge');
+      let overlay = wrap.querySelector('.card-overlay');
 
       if (anns.length) {
         // Badge
         if (!badge) {
           badge = document.createElement('div');
           badge.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-          card.insertBefore(badge, card.firstChild);
+          wrap.insertBefore(badge, wrap.firstChild);
         }
         badge.className = hasTasks ? 'card-badge has-tasks' : 'card-badge';
 
@@ -955,7 +1653,7 @@ function updateCardAnnotations(result, shouldGlow) {
         if (!overlay) {
           overlay = document.createElement('div');
           overlay.className = 'card-overlay';
-          card.insertBefore(overlay, card.querySelector('.card-img'));
+          wrap.insertBefore(overlay, wrap.querySelector('.card-img'));
         }
         let oh = '<div class="card-overlay-scroll">';
         for (const a of anns) {
@@ -1030,6 +1728,7 @@ const statusPanel = document.getElementById('statusPanel');
 const statusDot = document.getElementById('statusDot');
 const statusSummary = document.getElementById('statusSummary');
 const statImages = document.getElementById('statImages');
+const statChunks = document.getElementById('statChunks');
 const statModels = document.getElementById('statModels');
 const statFolders = document.getElementById('statFolders');
 const statActivity = document.getElementById('statActivity');
@@ -1048,9 +1747,15 @@ function folderName(path) {
 
 async function pollStatus() {
   try {
-    const resp = await fetch('/status');
+    const [resp, thoughtResp] = await Promise.all([
+      fetch('/status'),
+      fetch('/thought-status').catch(() => null),
+    ]);
     const s = await resp.json();
+    const ts = thoughtResp ? await thoughtResp.json().catch(() => ({})) : {};
     const n = s.total_images || 0;
+    const chunks = ts.total_chunks || 0;
+    statChunks.textContent = chunks.toLocaleString();
     const models = (s.enabled_models || []).map(m => m.replace(/-vit.*/, '')).join(', ');
     const folders = (s.folders || []).map(folderName);
     if (s.photos_library) folders.push('Photos Library');
@@ -1121,12 +1826,24 @@ async function doRefresh() {
   statusDot.classList.add('busy');
 
   try {
-    const resp = await fetch('/refresh', { method: 'POST' });
-    const stats = await resp.json();
+    // Refresh both photo-embed and thought-index in parallel
+    const [photoResp, thoughtResp] = await Promise.all([
+      fetch('/refresh', { method: 'POST' }),
+      fetch('/search-thoughts-reindex', { method: 'POST' }).catch(() => null),
+    ]);
+    const stats = await photoResp.json();
     const parts = [];
     if (stats.new) parts.push(`+${stats.new} new`);
     if (stats.changed) parts.push(`~${stats.changed} changed`);
     if (stats.deleted) parts.push(`-${stats.deleted} deleted`);
+
+    if (thoughtResp) {
+      const ts = await thoughtResp.json().catch(() => null);
+      if (ts && ts.total_chunks != null) {
+        parts.push(`${ts.total_chunks} notes`);
+      }
+    }
+
     statActivity.textContent = parts.length
       ? parts.join(', ')
       : 'Up to date';
@@ -1143,6 +1860,18 @@ async function doRefresh() {
 
 pollStatus();
 setInterval(pollStatus, 5000);
+
+// Infinite scroll
+window.addEventListener('scroll', () => {
+  if (_loadingMore || _displayedCount >= _allResults.length) return;
+  const scrollBottom = window.innerHeight + window.scrollY;
+  if (scrollBottom >= document.body.offsetHeight - 400) {
+    _loadingMore = true;
+    showMore();
+    updateSearchMeta(null);
+    _loadingMore = false;
+  }
+});
 </script>
 </body>
 </html>
