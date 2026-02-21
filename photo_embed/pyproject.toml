@@ -16,6 +16,8 @@ dependencies = [
     "onnxscript>=0.1.0",
     "pyobjc-framework-Cocoa",
     "reverse_geocode>=1.6.0",
+    "insightface>=0.7.0",
+    "opencv-python-headless>=4.8.0",
 ]
 
 [tool.setuptools]

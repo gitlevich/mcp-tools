@@ -77,6 +77,14 @@ class ServiceClient:
         import json
         return json.dumps(results, indent=2)
 
+    def find_similar(self, path: str, top_k: int = 20) -> str:
+        resp = self._post("/find-similar", {"path": path, "top_k": top_k})
+        results = resp.json()
+        if not results:
+            return "No similar images found."
+        import json
+        return json.dumps(results, indent=2)
+
     def refresh(self) -> dict:
         return self._post("/refresh").json()
 
@@ -120,3 +128,32 @@ class ServiceClient:
 
     def health(self) -> bool:
         return self._is_alive()
+
+    # -- face operations --
+
+    def refresh_faces(self) -> dict:
+        return self._post("/refresh-faces").json()
+
+    def get_faces(self, path: str) -> list[dict]:
+        return self._get("/faces", {"path": path}).json()
+
+    def label_face(self, path: str, face_idx: int, label: str) -> str:
+        return self._post(
+            "/label-face", {"path": path, "face_idx": face_idx, "label": label}
+        ).text
+
+    def find_person(self, path: str, face_idx: int = 0, top_k: int = 50) -> str:
+        import json
+
+        results = self._post(
+            "/find-person", {"path": path, "face_idx": face_idx, "top_k": top_k}
+        ).json()
+        if not results:
+            return "No matching faces found."
+        return json.dumps(results, indent=2)
+
+    def batch_label(self, matches: list[dict], label: str) -> dict:
+        return self._post("/batch-label", {"matches": matches, "label": label}).json()
+
+    def get_people(self) -> list[dict]:
+        return self._get("/people").json()

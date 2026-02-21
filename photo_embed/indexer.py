@@ -15,11 +15,14 @@ from config import (
     CACHE_DIR,
     CONFIG_FILE,
     DEFAULT_MODELS,
+    FACE_SIMILARITY_THRESHOLD,
+    FACES_FILE,
     METADATA_FILE,
     NOTE_MAX_PER_FILE,
     NOTES_METADATA_FILE,
     SUPPORTED_EXTENSIONS,
 )
+from face import FaceEngine, FaceRecord
 from models import AVAILABLE_MODELS, EmbeddingModel, OpenCLIPModel, get_device
 from onnx_text import OnnxTextEncoder, export_text_encoder, load_text_encoder
 from notes import NoteChunk, NoteSearchResult, chunk_file, scan_notes
@@ -72,6 +75,7 @@ class SearchResult:
     annotations: list[str] = field(default_factory=list)
     date_taken: str = ""
     location: str = ""
+    face_idx: int = -1
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +176,15 @@ class PhotoIndex:
         self._onnx_text_encoders: dict[str, OnnxTextEncoder] = {}
         self._annotations: dict[str, list[str]] = {}
         self._last_scan: float | None = None
+
+        # Face detection state (loaded lazily from faces.json + faces.npy)
+        self._face_records: list[FaceRecord] = []
+        self._face_embeddings: np.ndarray | None = None
+        self._faces_by_image: dict[str, list[int]] = {}
+        self._faces_by_label: dict[str, list[int]] = {}
+        self._face_scanned_paths: set[str] = set()  # all images checked, even those without faces
+        self._face_engine: FaceEngine | None = None
+
         self._load_state()
 
     # -- persistence --
@@ -270,6 +283,7 @@ class PhotoIndex:
                 self._note_embeddings[model_name] = None
 
         self._load_annotations()
+        self._load_faces()
 
     @staticmethod
     def _atomic_write_text(path: Path, data: str) -> None:
@@ -888,6 +902,44 @@ class PhotoIndex:
             results = batch
         return results
 
+    def find_similar(self, path: str, top_k: int = 20) -> list[SearchResult]:
+        """Find images visually similar to the given image.
+
+        Looks up the image's pre-computed embeddings and computes cosine
+        similarity against all other indexed images. No model loading needed.
+        """
+        resolved = str(Path(path).resolve())
+        indexed = self._indexed_lookup()
+        if resolved not in indexed:
+            return []
+
+        query_idx, _record = indexed[resolved]
+        images = list(self._state.images)
+        embeddings = {k: v for k, v in self._embeddings.items()}
+        annotations = dict(self._annotations)
+        n = len(images)
+
+        rankings: dict[str, list[tuple[int, float]]] = {}
+        raw_scores: dict[str, np.ndarray] = {}
+
+        for model_name in self._state.enabled_models:
+            emb = embeddings.get(model_name)
+            if emb is None or len(emb) < n:
+                continue
+            emb = emb[:n]
+            query_vec = emb[query_idx]
+            scores = emb @ query_vec
+            # Exclude the query image itself
+            scores[query_idx] = -1.0
+            raw_scores[model_name] = scores
+            ranked_indices = np.argsort(scores)[::-1]
+            rankings[model_name] = [(int(j), float(scores[j])) for j in ranked_indices]
+
+        if not rankings:
+            return []
+
+        return self._build_results(rankings, raw_scores, images, annotations, n, top_k)
+
     # -- prune / reindex --
 
     def prune_deleted(self) -> dict:
@@ -968,6 +1020,17 @@ class PhotoIndex:
 
     # -- status --
 
+    def _cache_size_bytes(self) -> int:
+        """Total size of the cache directory in bytes."""
+        total = 0
+        try:
+            for entry in self._cache_dir.rglob("*"):
+                if entry.is_file():
+                    total += entry.stat().st_size
+        except OSError:
+            pass
+        return total
+
     def status(self) -> dict:
         return {
             "folders": self._state.folders,
@@ -980,5 +1043,345 @@ class PhotoIndex:
                 for m, e in self._embeddings.items()
             },
             "total_notes": len(self._state.notes),
+            "total_faces": len(self._face_records),
+            "labeled_faces": sum(1 for r in self._face_records if r.label),
+            "people": len(self._faces_by_label),
             "last_scan": self._last_scan,
+            "cache_size_bytes": self._cache_size_bytes(),
         }
+
+    # -- face detection and recognition --
+
+    def _faces_path(self) -> Path:
+        return self._cache_dir / FACES_FILE.name
+
+    def _face_embeddings_path(self) -> Path:
+        return self._embeddings_dir() / "faces.npy"
+
+    def _load_faces(self) -> None:
+        path = self._faces_path()
+        if path.exists():
+            try:
+                raw = json.loads(path.read_text())
+                # Support both old format (plain list) and new format (dict)
+                if isinstance(raw, list):
+                    records_raw = raw
+                    scanned_raw = []
+                else:
+                    records_raw = raw.get("records", [])
+                    scanned_raw = raw.get("scanned", [])
+                self._face_records = [
+                    FaceRecord(
+                        image_path=r["image_path"],
+                        face_idx=r["face_idx"],
+                        bbox=tuple(r["bbox"]),
+                        confidence=r["confidence"],
+                        label=r.get("label", ""),
+                    )
+                    for r in records_raw
+                ]
+                self._face_scanned_paths = set(scanned_raw)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                logger.warning("Corrupt faces.json -- starting with empty face index")
+                self._face_records = []
+                self._face_scanned_paths = set()
+
+        n = len(self._face_records)
+        npy = self._face_embeddings_path()
+        if npy.exists() and n > 0:
+            emb = np.load(str(npy))
+            self._face_embeddings = np.array(emb[:n]) if len(emb) >= n else None
+        else:
+            self._face_embeddings = None
+
+        self._rebuild_face_lookups()
+
+    def _save_faces(self) -> None:
+        data = {
+            "records": [asdict(r) for r in self._face_records],
+            "scanned": sorted(self._face_scanned_paths),
+        }
+        self._atomic_write_text(self._faces_path(), json.dumps(data))
+        if self._face_embeddings is not None:
+            self._atomic_write_npy(self._face_embeddings_path(), self._face_embeddings)
+
+    def _rebuild_face_lookups(self) -> None:
+        self._faces_by_image = {}
+        self._faces_by_label = {}
+        for i, rec in enumerate(self._face_records):
+            self._faces_by_image.setdefault(rec.image_path, []).append(i)
+            self._face_scanned_paths.add(rec.image_path)
+            if rec.label:
+                self._faces_by_label.setdefault(rec.label, []).append(i)
+
+    def _ensure_face_engine(self) -> FaceEngine:
+        if self._face_engine is None or not self._face_engine.loaded:
+            self._face_engine = FaceEngine()
+            self._face_engine.load()
+        return self._face_engine
+
+    def _prefilter_people(
+        self, candidates: list[tuple[int, "ImageRecord"]], threshold: float = 0.22
+    ) -> list[tuple[int, "ImageRecord"]]:
+        """Use CLIP/SigLIP embeddings to keep only images likely containing people.
+
+        Encodes "a photo of a person" with the first text-capable model and
+        scores all candidate images. Returns only those above the threshold.
+        This is a pure numpy operation on pre-computed embeddings — milliseconds.
+        """
+        text_models = self._text_capable_models()
+        if not text_models:
+            return candidates  # no text model available, skip filtering
+
+        model_name = text_models[0]
+        emb_matrix = self._embeddings.get(model_name)
+        if emb_matrix is None:
+            return candidates
+
+        encoder = self._ensure_text_encoder(model_name)
+        query_vec = encoder.encode_text("a photo of a person's face")
+
+        n = len(self._state.images)
+        if len(emb_matrix) < n:
+            return candidates
+
+        scores = emb_matrix[:n] @ query_vec
+        kept = []
+        for global_idx, image_rec in candidates:
+            if scores[global_idx] >= threshold:
+                kept.append((global_idx, image_rec))
+
+        logger.info(
+            "Face pre-filter: %d/%d candidates likely contain people (threshold=%.2f)",
+            len(kept), len(candidates), threshold,
+        )
+        return kept
+
+    def refresh_faces(self, progress_callback=None) -> dict:
+        """Detect faces in images not yet scanned. Append-only.
+
+        Uses CLIP embeddings to pre-filter images likely containing people
+        before running the heavier face detection model.
+        """
+        faces_before = len(self._face_records)
+        all_pending = [
+            (i, r) for i, r in enumerate(self._state.images)
+            if r.path not in self._face_scanned_paths
+        ]
+
+        if not all_pending:
+            return {
+                "new_faces": 0,
+                "images_scanned": 0,
+                "images_skipped": 0,
+                "total_faces": len(self._face_records),
+            }
+
+        # Pre-filter: only run face detection on images likely to contain people
+        candidates = self._prefilter_people(all_pending)
+        skipped = len(all_pending) - len(candidates)
+
+        # Mark skipped images as scanned (no faces)
+        candidate_paths = {r.path for _, r in candidates}
+        for _, image_rec in all_pending:
+            if image_rec.path not in candidate_paths:
+                self._face_scanned_paths.add(image_rec.path)
+        if skipped:
+            self._save_faces()
+
+        engine = self._ensure_face_engine()
+        new_records: list[FaceRecord] = []
+        new_embeddings: list[np.ndarray] = []
+
+        for i, (global_idx, image_rec) in enumerate(candidates):
+            if progress_callback:
+                progress_callback(i, len(candidates))
+
+            # Use preview thumbnail for speed (800px, already generated)
+            thumb_path = str(
+                self._cache_dir
+                / "thumbnails"
+                / "preview"
+                / f"{image_rec.thumb_key}.webp"
+            )
+            source = thumb_path if Path(thumb_path).exists() else image_rec.path
+
+            try:
+                results = engine.detect_and_embed(source)
+                for face_rec, emb in results:
+                    face_rec.image_path = image_rec.path
+                    new_records.append(face_rec)
+                    new_embeddings.append(emb)
+            except Exception:
+                logger.debug("Face detection failed: %s", image_rec.path, exc_info=True)
+
+            self._face_scanned_paths.add(image_rec.path)
+
+            # Checkpoint periodically
+            if (i + 1) % 100 == 0:
+                if new_records:
+                    self._append_face_data(new_records, new_embeddings)
+                    new_records = []
+                    new_embeddings = []
+                else:
+                    self._save_faces()
+
+        # Final save
+        if new_records:
+            self._append_face_data(new_records, new_embeddings)
+        else:
+            self._save_faces()
+
+        return {
+            "new_faces": len(self._face_records) - faces_before,
+            "images_scanned": len(candidates),
+            "images_skipped": skipped,
+            "total_faces": len(self._face_records),
+        }
+
+    def _append_face_data(
+        self, records: list[FaceRecord], embeddings: list[np.ndarray]
+    ) -> None:
+        self._face_records.extend(records)
+        new_emb = np.vstack(embeddings).astype(np.float32)
+        if self._face_embeddings is not None:
+            self._face_embeddings = np.vstack([self._face_embeddings, new_emb])
+        else:
+            self._face_embeddings = new_emb
+        self._rebuild_face_lookups()
+        self._save_faces()
+
+    def get_faces(self, path: str) -> list[dict]:
+        """Return face records for a given image."""
+        resolved = str(Path(path).resolve())
+        indices = self._faces_by_image.get(resolved, [])
+        return [asdict(self._face_records[i]) for i in indices]
+
+    def label_face(self, path: str, face_idx: int, label: str) -> str:
+        """Assign a person name to a detected face."""
+        resolved = str(Path(path).resolve())
+        indices = self._faces_by_image.get(resolved, [])
+        for i in indices:
+            if self._face_records[i].face_idx == face_idx:
+                self._face_records[i].label = label.strip()
+                self._rebuild_face_lookups()
+                self._save_faces()
+                # Also add @person annotation for text search
+                self.annotate(resolved, f"@person {label.strip()}")
+                return f"Labeled face {face_idx} as '{label.strip()}'"
+        return f"Face {face_idx} not found in {Path(resolved).name}"
+
+    def find_person(
+        self, path: str, face_idx: int = 0, top_k: int = 50
+    ) -> list[SearchResult]:
+        """Find images containing the same person as a given face.
+
+        Uses pre-computed ArcFace embeddings for cosine similarity.
+        Returns SearchResult list (same format as find_similar).
+        """
+        resolved = str(Path(path).resolve())
+        indices = self._faces_by_image.get(resolved, [])
+
+        query_global_idx = None
+        for i in indices:
+            if self._face_records[i].face_idx == face_idx:
+                query_global_idx = i
+                break
+        if query_global_idx is None or self._face_embeddings is None:
+            return []
+
+        query_vec = self._face_embeddings[query_global_idx]
+        scores = self._face_embeddings @ query_vec
+
+        # Rank all faces, deduplicate by image, filter by threshold
+        ranked = np.argsort(scores)[::-1]
+        images = list(self._state.images)
+        indexed = self._indexed_lookup()
+        annotations = dict(self._annotations)
+
+        seen_images: set[str] = set()
+        results: list[SearchResult] = []
+        coords_batch: list[tuple[float, float]] = []
+        coord_indices: list[int] = []
+
+        for idx in ranked:
+            idx = int(idx)
+            if idx == query_global_idx:
+                continue
+            sim = float(scores[idx])
+            if sim < FACE_SIMILARITY_THRESHOLD:
+                break
+
+            rec = self._face_records[idx]
+            if rec.image_path in seen_images:
+                continue
+            seen_images.add(rec.image_path)
+
+            lookup = indexed.get(rec.image_path)
+            if lookup is None:
+                continue
+            img_idx, image_rec = lookup
+
+            preview_path = (
+                self._cache_dir
+                / "thumbnails"
+                / "preview"
+                / f"{image_rec.thumb_key}.webp"
+            )
+            result = SearchResult(
+                path=rec.image_path,
+                score=round(sim, 4),
+                preview_thumbnail=str(preview_path),
+                model_scores={"face": round(sim, 4)},
+                annotations=list(annotations.get(rec.image_path, [])),
+                date_taken=image_rec.date_taken,
+                face_idx=rec.face_idx,
+            )
+            ri = len(results)
+            results.append(result)
+
+            if image_rec.latitude is not None and image_rec.longitude is not None:
+                coords_batch.append((image_rec.latitude, image_rec.longitude))
+                coord_indices.append(ri)
+
+            if len(results) >= top_k:
+                break
+
+        if coords_batch:
+            locations = _batch_reverse_geocode(coords_batch)
+            for i, loc in zip(coord_indices, locations):
+                results[i].location = loc
+
+        return results
+
+    def batch_label_faces(self, matches: list[dict], label: str) -> dict:
+        """Label multiple faces at once. Each match needs image_path and face_idx."""
+        labeled = 0
+        label = label.strip()
+        for match in matches:
+            resolved = str(Path(match["image_path"]).resolve())
+            face_idx = match["face_idx"]
+            indices = self._faces_by_image.get(resolved, [])
+            for i in indices:
+                if self._face_records[i].face_idx == face_idx:
+                    if self._face_records[i].label != label:
+                        self._face_records[i].label = label
+                        self.annotate(resolved, f"@person {label}")
+                        labeled += 1
+                    break
+
+        self._rebuild_face_lookups()
+        self._save_faces()
+        return {"labeled": labeled, "label": label}
+
+    def get_people(self) -> list[dict]:
+        """Return all known people with face and image counts."""
+        people = {}
+        for label, indices in self._faces_by_label.items():
+            image_paths = {self._face_records[i].image_path for i in indices}
+            people[label] = {
+                "name": label,
+                "face_count": len(indices),
+                "image_count": len(image_paths),
+            }
+        return sorted(people.values(), key=lambda p: p["image_count"], reverse=True)

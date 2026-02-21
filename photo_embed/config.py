@@ -36,6 +36,11 @@ NOTES_METADATA_FILE = CACHE_DIR / "notes_metadata.json"
 
 DEFAULT_MODELS = ["clip-vit-b-16", "siglip-vit-b-16"]
 
+# -- faces --
+
+FACES_FILE = CACHE_DIR / "faces.json"
+FACE_SIMILARITY_THRESHOLD = 0.55
+
 # -- service daemon --
 
 SERVICE_PORT = int(os.environ.get("PHOTO_EMBED_PORT", "7820"))

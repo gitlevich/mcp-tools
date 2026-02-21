@@ -35,6 +35,20 @@ def search(query: str, top_k: int = DEFAULT_TOP_K) -> str:
 
 
 @mcp.tool()
+def find_similar(path: str, top_k: int = 20) -> str:
+    """Find images visually similar to a given image.
+
+    Uses pre-computed embeddings to find photos that look like the
+    specified image. Fast — no model loading required.
+
+    Args:
+        path: Absolute path to the source image (must be in the index).
+        top_k: Number of results to return (default 20).
+    """
+    return client.find_similar(path, top_k)
+
+
+@mcp.tool()
 def annotate(path: str, text: str) -> str:
     """Add a text annotation to a photo.
 
@@ -209,6 +223,52 @@ def reindex() -> str:
     This can be slow for large photo libraries.
     """
     return client.reindex()
+
+
+@mcp.tool()
+def refresh_faces() -> str:
+    """Detect faces in photos that haven't been scanned yet.
+
+    Runs face detection (RetinaFace) and face embedding (ArcFace) on all
+    indexed images that haven't been processed for faces. Incremental --
+    skips already-scanned images.
+    """
+    stats = client.refresh_faces()
+    return (
+        f"Scanned {stats['images_scanned']} images, "
+        f"found {stats['new_faces']} new faces "
+        f"({stats['total_faces']} total)"
+    )
+
+
+@mcp.tool()
+def label_face(path: str, face_idx: int, label: str) -> str:
+    """Label a face in a photo with a person's name.
+
+    After labeling, the person's name becomes searchable via text search
+    (adds an @person annotation to the image).
+
+    Args:
+        path: Absolute path to the image file.
+        face_idx: Index of the face within the image (from get_faces).
+        label: Person's name.
+    """
+    return client.label_face(path, face_idx, label)
+
+
+@mcp.tool()
+def find_person(path: str, face_idx: int = 0, top_k: int = 50) -> str:
+    """Find all photos containing the same person as a face in the given photo.
+
+    Uses pre-computed ArcFace embeddings for face matching. Returns ranked
+    results with similarity scores, same format as search results.
+
+    Args:
+        path: Absolute path to the image containing the reference face.
+        face_idx: Index of the face in that image (default 0 for single-face images).
+        top_k: Number of results to return (default 50).
+    """
+    return client.find_person(path, face_idx, top_k)
 
 
 if __name__ == "__main__":

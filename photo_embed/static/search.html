@@ -263,6 +263,15 @@
     padding: 1.25rem 2rem 4rem 1.5rem;
   }
 
+  /* Notes-only mode: photos disabled, notes take full width */
+  .content-area.notes-only .results { display: none; }
+  .content-area.notes-only .notes-section {
+    flex: 1;
+    width: auto;
+    border-left: none;
+    padding: 1.25rem 2rem 4rem 2rem;
+  }
+
   /* Note reader overlay */
   .note-reader {
     display: none;
@@ -519,6 +528,58 @@
     color: var(--green);
     font-size: 0.7rem;
   }
+  /* Similar button on card hover */
+  .card-similar-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(0, 0, 0, 0.7);
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.6rem;
+    cursor: pointer;
+    z-index: 3;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: auto;
+  }
+  .card:hover .card-similar-btn { opacity: 1; }
+  .card-similar-btn:hover { background: rgba(88, 166, 255, 0.6); border-color: var(--blue); }
+
+  /* Similar-mode breadcrumb */
+  .similar-bar {
+    display: none;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .similar-bar.visible { display: flex; }
+  .similar-bar img {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .similar-bar .similar-label { color: var(--text); font-weight: 500; }
+  .similar-bar .similar-back {
+    margin-left: auto;
+    background: transparent;
+    color: var(--blue);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .similar-bar .similar-back:hover { border-color: var(--blue); }
+
   /* Glow animation for resolved tasks */
   @keyframes glow {
     0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.6); }
@@ -666,12 +727,6 @@
     cursor: zoom-out;
   }
   .lightbox.active { display: flex; }
-  .lightbox img {
-    max-width: 95vw;
-    max-height: 95vh;
-    object-fit: contain;
-    border-radius: 4px;
-  }
   .lightbox-panel {
     position: fixed;
     bottom: 0;
@@ -755,6 +810,196 @@
   }
   .annotation-input:focus { border-color: var(--green); }
   .annotation-input::placeholder { color: var(--text-dim); }
+
+  /* Lightbox face overlay */
+  .lightbox-image-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 95vw;
+    max-height: 95vh;
+  }
+  .lightbox-image-wrap img {
+    max-width: 95vw;
+    max-height: 95vh;
+    object-fit: contain;
+    border-radius: 4px;
+    display: block;
+  }
+  .face-box {
+    position: absolute;
+    border: 2px solid var(--blue);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    z-index: 2;
+  }
+  .face-box:hover {
+    border-color: #fff;
+    box-shadow: 0 0 8px rgba(88, 166, 255, 0.6);
+  }
+  .face-box.labeled {
+    border-color: var(--green);
+  }
+  .face-box.labeled:hover {
+    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+  }
+  .face-box .face-label {
+    position: absolute;
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: var(--green);
+    font-size: 0.6rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Face context menu */
+  .face-menu {
+    display: none;
+    position: absolute;
+    z-index: 110;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    min-width: 180px;
+    cursor: default;
+  }
+  .face-menu.visible { display: block; }
+  .face-menu-header {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-bottom: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .face-menu-name {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+    margin-bottom: 0.4rem;
+  }
+  .face-menu-name:focus { border-color: var(--blue); }
+  .face-menu-name::placeholder { color: var(--text-dim); }
+  .face-menu-actions {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .face-menu-btn {
+    flex: 1;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+  }
+  .face-menu-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .face-menu-btn.primary {
+    background: var(--blue);
+    color: #000;
+    border-color: var(--blue);
+    font-weight: 500;
+  }
+  .face-menu-btn.primary:hover { opacity: 0.9; }
+
+  /* Person mode bar */
+  .person-bar {
+    display: none;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .person-bar.visible { display: flex; }
+  .person-bar img {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .person-bar .person-name-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+    width: 120px;
+  }
+  .person-bar .person-name-input:focus { border-color: var(--blue); }
+  .person-bar .person-name-input::placeholder { color: var(--text-dim); }
+  .person-bar .person-label { color: var(--text); font-weight: 500; }
+  .person-bar .person-count { color: var(--text-dim); font-size: 0.75rem; }
+  .person-bar .person-btn {
+    background: transparent;
+    color: var(--blue);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .person-bar .person-btn:hover { border-color: var(--blue); }
+  .person-bar .person-btn.confirm {
+    background: var(--green);
+    color: #000;
+    border-color: var(--green);
+    font-weight: 500;
+  }
+  .person-bar .person-btn.confirm:hover { opacity: 0.9; }
+  .person-bar .person-btn.confirm:disabled { opacity: 0.5; cursor: wait; }
+
+  /* Person mode card checkbox */
+  .card-check {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 22px;
+    height: 22px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid var(--green);
+    border-radius: 4px;
+    z-index: 3;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card-check.checked {
+    background: var(--green);
+  }
+  .card-check svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: #fff;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    display: none;
+  }
+  .card-check.checked svg { display: block; }
 </style>
 </head>
 <body>
@@ -786,6 +1031,20 @@
 
 <div class="content-area">
 <div class="results" id="results">
+  <div class="similar-bar" id="similarBar">
+    <img id="similarThumb" src="" alt="">
+    <span class="similar-label">Similar to</span>
+    <span id="similarName"></span>
+    <button class="similar-back" onclick="exitSimilarMode()">Back to results</button>
+  </div>
+  <div class="person-bar" id="personBar">
+    <img id="personThumb" src="" alt="">
+    <span class="person-label">Photos of</span>
+    <input class="person-name-input" id="personNameInput" type="text" placeholder="Name...">
+    <span class="person-count" id="personCount"></span>
+    <button class="person-btn confirm" id="personConfirmBtn" onclick="confirmPersonLabels()">Confirm selected</button>
+    <button class="person-btn" onclick="exitPersonMode()">Back</button>
+  </div>
   <div class="empty-state">
     <h2>Search your photos</h2>
     <p>Type a description like "sunset at the beach" or "birthday party"</p>
@@ -815,6 +1074,7 @@
     <span><span class="stat-label">Images: </span><span class="stat-value" id="statImages">--</span></span>
     <span id="statChunksWrap"><span class="stat-label">Notes: </span><span class="stat-value" id="statChunks">--</span></span>
     <span><span class="stat-label">Models: </span><span class="stat-value" id="statModels">--</span></span>
+    <span><span class="stat-label">Cache: </span><span class="stat-value" id="statCache">--</span></span>
     <span class="status-folders" id="statFolders"></span>
     <span class="status-activity" id="statActivity"></span>
     <button class="refresh-btn" id="addFolderBtn" onclick="doPickFolder()">Add Folder</button>
@@ -823,7 +1083,17 @@
 </div>
 
 <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
-  <img id="lightboxImg">
+  <div class="lightbox-image-wrap" id="lightboxWrap" onclick="event.stopPropagation()">
+    <img id="lightboxImg" onclick="closeLightbox()">
+    <div class="face-menu" id="faceMenu">
+      <div class="face-menu-header">Name this person</div>
+      <input class="face-menu-name" id="faceMenuName" type="text" placeholder="Name..." autocomplete="off">
+      <div class="face-menu-actions">
+        <button class="face-menu-btn primary" id="faceMenuLabel" type="button">Label</button>
+        <button class="face-menu-btn" id="faceMenuFind" type="button">Find all</button>
+      </div>
+    </div>
+  </div>
   <div class="lightbox-panel" onclick="event.stopPropagation()">
     <div class="lightbox-path" id="lightboxPath"></div>
     <div class="lightbox-meta" id="lightboxMeta"></div>
@@ -834,6 +1104,7 @@
         type="text"
         placeholder="Add annotation... (Enter to save)"
       >
+      <button type="button" class="refresh-btn" id="lightboxSimilarBtn" onclick="lightboxFindSimilar()">Similar</button>
     </div>
   </div>
 </div>
@@ -885,6 +1156,7 @@ function applyNotesVisibility() {
   if (!on) {
     notesSection.classList.remove('visible');
     contentArea.classList.remove('note-focus');
+    contentArea.classList.remove('notes-only');
   }
   document.getElementById('statChunksWrap').style.display = on ? '' : 'none';
 }
@@ -1065,7 +1337,9 @@ function getGridColumns() {
 }
 
 document.addEventListener('keydown', (e) => {
-  const inInput = document.activeElement === queryInput || document.activeElement === annotationInput;
+  const inInput = document.activeElement === queryInput || document.activeElement === annotationInput
+    || document.activeElement.classList.contains('face-menu-name')
+    || document.activeElement.classList.contains('person-name-input');
   const inLightbox = lightbox.classList.contains('active');
 
   // Escape: close overlays in order
@@ -1204,7 +1478,19 @@ function renderNotes(results) {
       '</div>' +
       (noteDate ? '<div class="note-card-date">' + escapeHtml(noteDate) + '</div>' : '') +
       '<div class="note-card-text">' + escapeHtml(r.text) + '</div>';
-    card.onclick = () => enterNoteFocus(r, card);
+    card.onclick = () => {
+      if (!optPhotos.checked) {
+        const wasExpanded = card.classList.contains('expanded');
+        notesGrid.querySelectorAll('.note-card.expanded').forEach(c => c.classList.remove('expanded'));
+        notesGrid.querySelectorAll('.note-card.active').forEach(c => c.classList.remove('active'));
+        if (!wasExpanded) {
+          card.classList.add('expanded');
+          card.classList.add('active');
+        }
+      } else {
+        enterNoteFocus(r, card);
+      }
+    };
     card.ondblclick = () => openNoteReader(r);
     notesGrid.appendChild(card);
   }
@@ -1257,7 +1543,7 @@ function enterNoteFocus(note, cardEl) {
           _allResults = data;
           _lastResults = data;
           _displayedCount = 0;
-          resultsDiv.innerHTML = '';
+          clearResultsGrid();
           if (data.length) {
             const grid = document.createElement('div');
             grid.className = 'grid';
@@ -1273,6 +1559,7 @@ function enterNoteFocus(note, cardEl) {
 
 function exitNoteFocus() {
   contentArea.classList.remove('note-focus');
+  contentArea.classList.remove('notes-only');
   notesGrid.querySelectorAll('.note-card.active').forEach(c => c.classList.remove('active'));
   notesGrid.querySelectorAll('.note-card.expanded').forEach(c => c.classList.remove('expanded'));
   if (_savedQuery) {
@@ -1294,9 +1581,25 @@ function closeNoteReader(e) {
   noteReader.classList.remove('active');
 }
 
+function clearResultsGrid() {
+  const grid = document.getElementById('resultsGrid');
+  if (grid) grid.remove();
+  resultsDiv.querySelectorAll('.empty-state').forEach(el => el.remove());
+}
+
 async function doSearch() {
   const query = queryInput.value.trim();
   if (!query) return;
+
+  // Exit similar/person mode if active
+  document.getElementById('similarBar').classList.remove('visible');
+  _similarPrevResults = null;
+  _similarPrevQuery = '';
+  personBar.classList.remove('visible');
+  _personMode = false;
+  _personPrevResults = null;
+  _personPrevQuery = '';
+  _personChecked.clear();
 
   pushHistory(query);
   searchBtn.disabled = true;
@@ -1305,6 +1608,7 @@ async function doSearch() {
   _displayedCount = 0;
   _selectedCardIndex = -1;
   notesSection.classList.remove('visible');
+  contentArea.classList.remove('notes-only');
 
   const hdrs = { 'Content-Type': 'application/json' };
   const t0 = performance.now();
@@ -1319,12 +1623,13 @@ async function doSearch() {
   }
 
   if (!optPhotos.checked) {
+    clearResultsGrid();
     if (!optNotes.checked) {
-      resultsDiv.innerHTML = '<div class="empty-state"><h2>No search sources selected</h2><p>Enable Photos or Notes in search options</p></div>';
+      resultsDiv.insertAdjacentHTML('beforeend', '<div class="empty-state"><h2>No search sources selected</h2><p>Enable Photos or Notes in search options</p></div>');
       searchMeta.textContent = '';
     } else {
-      resultsDiv.innerHTML = '';
       searchMeta.textContent = '';
+      contentArea.classList.add('notes-only');
     }
     searchBtn.disabled = false;
     return;
@@ -1360,7 +1665,7 @@ async function doSearch() {
           _displayedCount = 0;
           _selectedCardIndex = -1;
 
-          resultsDiv.innerHTML = '';
+          clearResultsGrid();
           if (data.length) {
             const grid = document.createElement('div');
             grid.className = 'grid';
@@ -1375,21 +1680,23 @@ async function doSearch() {
 
     const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
     if (!_allResults.length) {
-      resultsDiv.innerHTML = `
+      clearResultsGrid();
+      resultsDiv.insertAdjacentHTML('beforeend', `
         <div class="empty-state">
           <h2>No matching results</h2>
           <p>Try a different description</p>
-        </div>`;
+        </div>`);
       searchMeta.textContent = `0 results (${elapsed}s)`;
     } else {
       updateSearchMeta(elapsed);
     }
   } catch (e) {
-    resultsDiv.innerHTML = `
+    clearResultsGrid();
+    resultsDiv.insertAdjacentHTML('beforeend', `
       <div class="empty-state">
         <h2>Search failed</h2>
-        <p>${e.message}</p>
-      </div>`;
+        <p>${escapeHtml(e.message)}</p>
+      </div>`);
     searchMeta.textContent = 'Error';
   } finally {
     searchBtn.disabled = false;
@@ -1459,7 +1766,7 @@ function appendCards(grid, results) {
   for (const r of results) {
     const card = document.createElement('div');
     card.className = 'card';
-    card.onclick = () => openLightbox(r);
+    card.onclick = (e) => { if (!e.target.closest('.card-similar-btn')) openLightbox(r); };
 
     const scores = Object.entries(r.model_scores)
       .map(([m, s]) => `${m.replace(/-vit.*/, '')}: ${s.toFixed(3)}`)
@@ -1469,6 +1776,7 @@ function appendCards(grid, results) {
     const hasTasks = anns.some(a => a.startsWith('@task '));
     const hasNotes = anns.length > 0;
     let html = '<div class="card-image-wrap">';
+    html += `<button type="button" class="card-similar-btn" data-path="${escapeAttr(r.path)}" data-thumb="${escapeAttr(thumbUrl(r.preview_thumbnail))}">Similar</button>`;
     if (hasNotes) {
       const cls = hasTasks ? 'card-badge has-tasks' : 'card-badge';
       html += `<div class="${cls}"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>`;
@@ -1508,6 +1816,7 @@ function openLightbox(result) {
   lightbox.classList.add('active');
   annotationInput.value = '';
   loadAnnotations(result.path);
+  loadFaces(result.path);
   if (notesEnabled()) searchNotesForImage(result);
 }
 
@@ -1527,6 +1836,16 @@ function closeLightbox(e) {
   lightbox.classList.remove('active');
   lightboxImg.src = '';
   _lightboxResult = null;
+  closeFaceMenu();
+  document.querySelectorAll('#lightboxWrap .face-box').forEach(b => b.remove());
+  _faceData = [];
+}
+
+function lightboxFindSimilar() {
+  if (!_lightboxResult) return;
+  const r = _lightboxResult;
+  closeLightbox();
+  doFindSimilar(r.path, thumbUrl(r.preview_thumbnail));
 }
 
 function renderAnnotationTags(annotations) {
@@ -1703,6 +2022,432 @@ function updateCardAnnotations(result, shouldGlow) {
   }
 }
 
+// --- Find Similar mode ---
+
+let _similarPrevResults = null;
+let _similarPrevQuery = '';
+
+resultsDiv.addEventListener('click', (e) => {
+  const btn = e.target.closest('.card-similar-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  doFindSimilar(btn.dataset.path, btn.dataset.thumb);
+});
+
+async function doFindSimilar(path, thumbSrc) {
+  // Save current state for back navigation
+  if (!_similarPrevResults) {
+    _similarPrevResults = _allResults;
+    _similarPrevQuery = queryInput.value;
+  }
+
+  const similarBar = document.getElementById('similarBar');
+  document.getElementById('similarThumb').src = thumbSrc;
+  document.getElementById('similarName').textContent = filename(path);
+  similarBar.classList.add('visible');
+
+  searchBtn.disabled = true;
+  searchMeta.innerHTML = '<span class="spinner"></span>Finding similar...';
+
+  try {
+    const resp = await fetch('/find-similar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, top_k: 200 }),
+    });
+    const data = await resp.json();
+    _allResults = data;
+    _lastResults = data;
+    _displayedCount = 0;
+    _selectedCardIndex = -1;
+
+    // Clear grid but keep the similar bar
+    const existing = document.getElementById('resultsGrid');
+    if (existing) existing.remove();
+    resultsDiv.querySelectorAll('.empty-state').forEach(el => el.remove());
+
+    if (data.length) {
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.id = 'resultsGrid';
+      resultsDiv.appendChild(grid);
+      showMore();
+    } else {
+      resultsDiv.insertAdjacentHTML('beforeend',
+        '<div class="empty-state"><h2>No similar images found</h2></div>');
+    }
+    searchMeta.textContent = `${data.length} similar`;
+  } catch (err) {
+    searchMeta.textContent = 'Error';
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+function exitSimilarMode() {
+  document.getElementById('similarBar').classList.remove('visible');
+  if (_similarPrevResults) {
+    _allResults = _similarPrevResults;
+    _lastResults = _similarPrevResults;
+    _displayedCount = 0;
+    _selectedCardIndex = -1;
+    queryInput.value = _similarPrevQuery;
+    _similarPrevResults = null;
+    _similarPrevQuery = '';
+
+    const existing = document.getElementById('resultsGrid');
+    if (existing) existing.remove();
+    resultsDiv.querySelectorAll('.empty-state').forEach(el => el.remove());
+
+    if (_allResults.length) {
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.id = 'resultsGrid';
+      resultsDiv.appendChild(grid);
+      showMore();
+      updateSearchMeta(null);
+    }
+  }
+}
+
+// --- Face overlay & person mode ---
+
+const faceMenu = document.getElementById('faceMenu');
+const faceMenuName = document.getElementById('faceMenuName');
+const faceMenuLabel = document.getElementById('faceMenuLabel');
+const faceMenuFind = document.getElementById('faceMenuFind');
+const personBar = document.getElementById('personBar');
+const personNameInput = document.getElementById('personNameInput');
+const personCount = document.getElementById('personCount');
+const personConfirmBtn = document.getElementById('personConfirmBtn');
+let _faceData = [];       // face records for current lightbox image
+let _activeFace = null;   // { face_idx, image_path } of clicked face
+let _personMode = false;
+let _personPrevResults = null;
+let _personPrevQuery = '';
+let _personSourcePath = '';
+let _personSourceFaceIdx = 0;
+let _personChecked = new Set(); // indices into _allResults that are checked
+
+function closeFaceMenu() {
+  faceMenu.classList.remove('visible');
+  _activeFace = null;
+}
+
+async function loadFaces(path) {
+  // Remove existing face boxes
+  document.querySelectorAll('#lightboxWrap .face-box').forEach(b => b.remove());
+  closeFaceMenu();
+  _faceData = [];
+  try {
+    const resp = await fetch('/faces?path=' + encodeURIComponent(path));
+    _faceData = await resp.json();
+  } catch { return; }
+  if (!_faceData.length) return;
+
+  // Wait for image to have dimensions
+  const img = lightboxImg;
+  if (!img.naturalWidth) await new Promise(r => img.onload = r);
+  renderFaceBoxes();
+}
+
+function renderFaceBoxes() {
+  document.querySelectorAll('#lightboxWrap .face-box').forEach(b => b.remove());
+  const img = lightboxImg;
+  const wrap = document.getElementById('lightboxWrap');
+  const imgW = img.clientWidth;
+  const imgH = img.clientHeight;
+  if (!imgW || !imgH) return;
+
+  for (const face of _faceData) {
+    const [x1, y1, x2, y2] = face.bbox;
+    const box = document.createElement('div');
+    box.className = 'face-box' + (face.label ? ' labeled' : '');
+    box.style.left = (x1 * imgW) + 'px';
+    box.style.top = (y1 * imgH) + 'px';
+    box.style.width = ((x2 - x1) * imgW) + 'px';
+    box.style.height = ((y2 - y1) * imgH) + 'px';
+    if (face.label) {
+      box.innerHTML = '<span class="face-label">' + escapeHtml(face.label) + '</span>';
+    }
+    box.onclick = (e) => {
+      e.stopPropagation();
+      openFaceMenu(face, box);
+    };
+    wrap.appendChild(box);
+  }
+}
+
+function openFaceMenu(face, boxEl) {
+  _activeFace = face;
+  faceMenuName.value = face.label || '';
+
+  // Position menu near the face box
+  const wrap = document.getElementById('lightboxWrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  const boxRect = boxEl.getBoundingClientRect();
+
+  let left = boxRect.right - wrapRect.left + 6;
+  let top = boxRect.top - wrapRect.top;
+
+  // Keep menu inside viewport
+  faceMenu.classList.add('visible');
+  const menuRect = faceMenu.getBoundingClientRect();
+  if (left + menuRect.width > wrapRect.width) {
+    left = boxRect.left - wrapRect.left - menuRect.width - 6;
+  }
+  if (top + menuRect.height > wrapRect.height) {
+    top = wrapRect.height - menuRect.height - 4;
+  }
+  if (top < 0) top = 4;
+
+  faceMenu.style.left = left + 'px';
+  faceMenu.style.top = top + 'px';
+  faceMenuName.focus();
+}
+
+faceMenuName.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    doLabelFace();
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeFaceMenu();
+  }
+});
+
+faceMenuLabel.addEventListener('click', (e) => {
+  e.stopPropagation();
+  doLabelFace();
+});
+
+faceMenuFind.addEventListener('click', (e) => {
+  e.stopPropagation();
+  doFindPerson();
+});
+
+async function doLabelFace() {
+  if (!_activeFace || !_lightboxResult) return;
+  const name = faceMenuName.value.trim();
+  if (!name) { faceMenuName.focus(); return; }
+
+  try {
+    await fetch('/label-face', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: _lightboxResult.path,
+        face_idx: _activeFace.face_idx,
+        label: name,
+      }),
+    });
+    // Refresh face data and annotations
+    closeFaceMenu();
+    loadFaces(_lightboxResult.path);
+    loadAnnotations(_lightboxResult.path);
+  } catch { /* ignore */ }
+}
+
+async function doFindPerson() {
+  if (!_activeFace || !_lightboxResult) return;
+  const face = _activeFace;
+  const result = _lightboxResult;
+  const name = faceMenuName.value.trim();
+
+  closeFaceMenu();
+  closeLightbox();
+
+  // Save state for back nav
+  if (!_personPrevResults) {
+    _personPrevResults = _allResults;
+    _personPrevQuery = queryInput.value;
+  }
+
+  _personMode = true;
+  _personSourcePath = result.path;
+  _personSourceFaceIdx = face.face_idx;
+
+  // Show person bar
+  document.getElementById('personThumb').src = thumbUrl(result.preview_thumbnail);
+  personNameInput.value = name || face.label || '';
+  personBar.classList.add('visible');
+  document.getElementById('similarBar').classList.remove('visible');
+
+  searchBtn.disabled = true;
+  searchMeta.innerHTML = '<span class="spinner"></span>Finding person...';
+
+  try {
+    const resp = await fetch('/find-person', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: result.path,
+        face_idx: face.face_idx,
+        top_k: 200,
+      }),
+    });
+    const data = await resp.json();
+    _allResults = data;
+    _lastResults = data;
+    _displayedCount = 0;
+    _selectedCardIndex = -1;
+    _personChecked = new Set(data.map((_, i) => i)); // all checked by default
+
+    clearResultsGrid();
+    if (data.length) {
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.id = 'resultsGrid';
+      resultsDiv.appendChild(grid);
+      showMore();
+      addPersonCheckboxes();
+      updatePersonCount();
+    } else {
+      resultsDiv.insertAdjacentHTML('beforeend',
+        '<div class="empty-state"><h2>No matching faces found</h2><p>Try running face detection first (refresh faces)</p></div>');
+    }
+    searchMeta.textContent = `${data.length} matches`;
+  } catch (err) {
+    searchMeta.textContent = 'Error';
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+function addPersonCheckboxes() {
+  const cards = getCards();
+  cards.forEach((card, i) => {
+    const existing = card.querySelector('.card-check');
+    if (existing) existing.remove();
+
+    const wrap = card.querySelector('.card-image-wrap');
+    const check = document.createElement('div');
+    check.className = 'card-check' + (_personChecked.has(i) ? ' checked' : '');
+    check.innerHTML = '<svg viewBox="0 0 14 14"><polyline points="2.5 7 5.5 10.5 11.5 3.5"/></svg>';
+    check.onclick = (e) => {
+      e.stopPropagation();
+      if (_personChecked.has(i)) {
+        _personChecked.delete(i);
+        check.classList.remove('checked');
+      } else {
+        _personChecked.add(i);
+        check.classList.add('checked');
+      }
+      updatePersonCount();
+    };
+    // Hide the Similar button in person mode
+    const simBtn = card.querySelector('.card-similar-btn');
+    if (simBtn) simBtn.style.display = 'none';
+    wrap.insertBefore(check, wrap.firstChild);
+  });
+}
+
+function updatePersonCount() {
+  personCount.textContent = _personChecked.size + ' of ' + _allResults.length + ' selected';
+  personConfirmBtn.disabled = !_personChecked.size || !personNameInput.value.trim();
+}
+
+personNameInput.addEventListener('input', updatePersonCount);
+personNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    confirmPersonLabels();
+  }
+});
+
+async function confirmPersonLabels() {
+  const name = personNameInput.value.trim();
+  if (!name || !_personChecked.size) return;
+
+  personConfirmBtn.disabled = true;
+  personConfirmBtn.textContent = 'Labeling...';
+
+  // Build matches from checked results — face_idx comes from find_person response
+  const matches = [];
+  for (const i of _personChecked) {
+    const r = _allResults[i];
+    matches.push({
+      image_path: r.path,
+      face_idx: r.face_idx >= 0 ? r.face_idx : 0,
+    });
+  }
+
+  if (matches.length) {
+    try {
+      await fetch('/batch-label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matches, label: name }),
+      });
+    } catch { /* ignore */ }
+  }
+
+  personConfirmBtn.textContent = 'Confirm selected';
+  personConfirmBtn.disabled = false;
+  exitPersonMode();
+}
+
+function exitPersonMode() {
+  _personMode = false;
+  personBar.classList.remove('visible');
+  _personChecked.clear();
+
+  if (_personPrevResults) {
+    _allResults = _personPrevResults;
+    _lastResults = _personPrevResults;
+    _displayedCount = 0;
+    _selectedCardIndex = -1;
+    queryInput.value = _personPrevQuery;
+    _personPrevResults = null;
+    _personPrevQuery = '';
+
+    clearResultsGrid();
+    if (_allResults.length) {
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.id = 'resultsGrid';
+      resultsDiv.appendChild(grid);
+      showMore();
+      updateSearchMeta(null);
+    }
+  }
+}
+
+// Re-add checkboxes when showMore loads additional cards in person mode
+const _origShowMore = showMore;
+
+// Observe new cards added to resultsGrid for person mode
+const _showMoreObserver = new MutationObserver(() => {
+  if (_personMode) {
+    addPersonCheckboxes();
+  }
+});
+
+// Start observing when a grid is created (patched into showMore flow)
+// We'll use a simpler approach: override showMore
+showMore = function() {
+  _origShowMore();
+  if (_personMode) {
+    addPersonCheckboxes();
+  }
+};
+
+// Close face menu when clicking elsewhere in lightbox
+document.getElementById('lightboxWrap').addEventListener('click', (e) => {
+  if (!e.target.closest('.face-menu') && !e.target.closest('.face-box')) {
+    closeFaceMenu();
+  }
+});
+
+// Reposition face boxes on window resize
+window.addEventListener('resize', () => {
+  if (lightbox.classList.contains('active') && _faceData.length) {
+    renderFaceBoxes();
+  }
+});
+
 annotationInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.stopPropagation();
@@ -1756,8 +2501,16 @@ const statImages = document.getElementById('statImages');
 const statChunks = document.getElementById('statChunks');
 const statModels = document.getElementById('statModels');
 const statFolders = document.getElementById('statFolders');
+const statCache = document.getElementById('statCache');
 const statActivity = document.getElementById('statActivity');
 const refreshBtn = document.getElementById('refreshBtn');
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
 
 let _refreshing = false;
 
@@ -1785,6 +2538,8 @@ async function pollStatus() {
     if (s.photos_library) folders.push('Photos Library');
 
     statImages.textContent = n.toLocaleString();
+    statCache.textContent = s.cache_size_bytes != null ? formatBytes(s.cache_size_bytes) : '--';
+    if (s.cache_dir) statCache.title = s.cache_dir;
     statModels.textContent = models || '--';
     const fullPaths = [...(s.folders || [])];
     if (s.photos_library) fullPaths.push(s.photos_library);
@@ -1850,16 +2605,19 @@ async function doRefresh() {
   statusDot.classList.add('busy');
 
   try {
-    // Refresh photo-embed (and thought-index if notes enabled)
-    const promises = [fetch('/refresh', { method: 'POST' })];
-    if (notesEnabled()) promises.push(fetch('/search-thoughts-reindex', { method: 'POST' }).catch(() => null));
-    const [photoResp, thoughtResp = null] = await Promise.all(promises);
+    // Refresh photos + notes in parallel
+    const thoughtPromise = notesEnabled()
+      ? fetch('/search-thoughts-reindex', { method: 'POST' }).catch(() => null)
+      : Promise.resolve(null);
+
+    const photoResp = await fetch('/refresh', { method: 'POST' });
     const stats = await photoResp.json();
     const parts = [];
     if (stats.new) parts.push(`+${stats.new} new`);
     if (stats.changed) parts.push(`~${stats.changed} changed`);
     if (stats.deleted) parts.push(`-${stats.deleted} deleted`);
 
+    const thoughtResp = await thoughtPromise;
     if (thoughtResp) {
       const ts = await thoughtResp.json().catch(() => null);
       if (ts && ts.total_chunks != null) {
@@ -1871,6 +2629,9 @@ async function doRefresh() {
       ? parts.join(', ')
       : 'Up to date';
     setTimeout(() => { if (!_refreshing) statActivity.textContent = ''; }, 5000);
+
+    // Fire face detection in background — progress shows in status bar via pollStatus
+    fetch('/refresh-faces', { method: 'POST' }).catch(() => {});
   } catch (e) {
     statActivity.textContent = 'Refresh failed';
   } finally {

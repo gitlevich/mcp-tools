@@ -88,6 +88,7 @@ async def status(request: Request) -> JSONResponse:
     if not _index_ready.is_set():
         return _LOADING
     data = get_index().status()
+    data["cache_dir"] = str(CACHE_DIR)
     # Include live activity/progress from reporter
     if reporter._current_operation:
         data["activity"] = {
@@ -270,6 +271,16 @@ async def thought_reindex(request: Request) -> JSONResponse:
     return JSONResponse(stats)
 
 
+async def find_similar(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    path = body["path"]
+    top_k = body.get("top_k", 20)
+    results = await asyncio.to_thread(get_index().find_similar, path, top_k)
+    return JSONResponse([asdict(r) for r in results])
+
+
 async def prune(request: Request) -> JSONResponse:
     if not _index_ready.is_set():
         return _LOADING
@@ -294,6 +305,60 @@ async def disconnect_photos(request: Request) -> PlainTextResponse:
     return PlainTextResponse(msg)
 
 
+# -- face endpoints --
+
+
+async def refresh_faces(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    async with _refresh_lock:
+        with reporter.report("Detecting faces") as r:
+            stats = await asyncio.to_thread(
+                get_index().refresh_faces, progress_callback=r.set_progress
+            )
+    return JSONResponse(stats)
+
+
+async def get_faces(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    path = request.query_params["path"]
+    return JSONResponse(get_index().get_faces(path))
+
+
+async def label_face(request: Request) -> PlainTextResponse:
+    if not _index_ready.is_set():
+        return PlainTextResponse("Service is loading, try again shortly.", status_code=503)
+    body = await request.json()
+    msg = get_index().label_face(body["path"], body["face_idx"], body["label"])
+    return PlainTextResponse(msg)
+
+
+async def find_person_handler(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    path = body["path"]
+    face_idx = body.get("face_idx", 0)
+    top_k = body.get("top_k", 50)
+    results = await asyncio.to_thread(get_index().find_person, path, face_idx, top_k)
+    return JSONResponse([asdict(r) for r in results])
+
+
+async def batch_label(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    stats = get_index().batch_label_faces(body["matches"], body["label"])
+    return JSONResponse(stats)
+
+
+async def get_people(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    return JSONResponse(get_index().get_people())
+
+
 THUMBNAIL_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
 routes = [
@@ -302,6 +367,7 @@ routes = [
     Route("/status", status, methods=["GET"]),
     Route("/search", search, methods=["POST"]),
     Route("/search-stream", search_stream, methods=["POST"]),
+    Route("/find-similar", find_similar, methods=["POST"]),
     Route("/refresh", refresh, methods=["POST"]),
     Route("/reindex", reindex, methods=["POST"]),
     Route("/pick-folder", pick_and_add_folder, methods=["POST"]),
@@ -318,6 +384,12 @@ routes = [
     Route("/tasks", pending_tasks, methods=["GET"]),
     Route("/connect-photos", connect_photos, methods=["POST"]),
     Route("/disconnect-photos", disconnect_photos, methods=["POST"]),
+    Route("/refresh-faces", refresh_faces, methods=["POST"]),
+    Route("/faces", get_faces, methods=["GET"]),
+    Route("/label-face", label_face, methods=["POST"]),
+    Route("/find-person", find_person_handler, methods=["POST"]),
+    Route("/batch-label", batch_label, methods=["POST"]),
+    Route("/people", get_people, methods=["GET"]),
     Mount("/thumbnails", StaticFiles(directory=str(THUMBNAIL_PREVIEW_DIR)), name="thumbnails"),
 ]
 
