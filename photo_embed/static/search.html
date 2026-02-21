@@ -349,10 +349,34 @@
   .status-body .stat-label { color: var(--text-dim); }
   .status-body .stat-value { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
   .status-folders {
+    position: relative;
     max-width: 300px;
+  }
+  .status-folders .folder-label {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .folder-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 60;
+  }
+  .status-folders:hover .folder-tooltip { display: block; }
+  .folder-tooltip div {
+    padding: 0.15rem 0;
+    font-size: 0.7rem;
+    color: var(--text-dim);
   }
   .refresh-btn {
     background: transparent;
@@ -1033,8 +1057,11 @@ async function pollStatus() {
 
     statImages.textContent = n.toLocaleString();
     statModels.textContent = models || '--';
-    statFolders.textContent = folders.length ? folders.join(', ') : 'No folders';
-    statFolders.title = [...(s.folders || []), s.photos_library].filter(Boolean).join('\n');
+    const fullPaths = [...(s.folders || [])];
+    if (s.photos_library) fullPaths.push(s.photos_library);
+    const folderDisplay = folders.length ? folders.join(', ') : 'No folders';
+    statFolders.innerHTML = '<span class="folder-label">' + escapeHtml(folderDisplay) + '</span>'
+      + (fullPaths.length ? '<div class="folder-tooltip">' + fullPaths.map(p => '<div>' + escapeHtml(p) + '</div>').join('') + '</div>' : '');
 
     const act = s.activity;
     if (act) {
@@ -1043,7 +1070,7 @@ async function pollStatus() {
       if (p && p.total > 0) {
         const pct = Math.round(100 * p.current / p.total);
         const rate = p.detail || '';
-        statusSummary.textContent = `${n.toLocaleString()} images — ${p.current.toLocaleString()} / ${p.total.toLocaleString()} (${pct}%)`;
+        statusSummary.textContent = `${p.current.toLocaleString()} of ${p.total.toLocaleString()} images (${pct}%)`;
         statActivity.textContent = rate ? `${act.operation} — ${rate}` : act.operation;
       } else {
         statusSummary.textContent = `${n.toLocaleString()} images — ${act.operation}...`;
