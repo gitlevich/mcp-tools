@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "project-embed": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "--directory", "/Users/vlad/Attention Lab/mcp-tools/project_embed", "python", "server.py"],
+      "env": {
+        "PROJECT_ROOT": "/Users/vlad/Attention Lab/mcp-tools"
+      }
+    },
+    "rename": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "--directory", "/Users/vlad/Attention Lab/mcp-tools/rename", "python", "server.py"],
+      "env": {}
+    },
+    "photo-embed": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "--directory", "/Users/vlad/Attention Lab/mcp-tools/photo_embed", "python", "server.py"],
+      "env": {}
+    },
+    "thought-index": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "--directory", "/Users/vlad/Attention Lab/mcp-tools/thought_index", "python", "server.py"],
+      "env": {}
+    }
+  }
+}

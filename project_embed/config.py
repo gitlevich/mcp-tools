@@ -18,6 +18,8 @@ EXCLUDE_DIRS = {
     ".claude",
     ".cursor",
     ".vscode",
+    ".specstory",
+    ".cache",
     "data",
 }
 
