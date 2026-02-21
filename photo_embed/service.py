@@ -13,8 +13,6 @@ Startup order:
 """
 
 import asyncio
-import ctypes
-import ctypes.util
 import json
 import logging
 import os
@@ -331,20 +329,18 @@ app = Starlette(routes=routes)
 # ---------------------------------------------------------------------------
 
 
-def _set_background_priority() -> None:
+def _set_process_priority() -> None:
+    """Set low process priority via nice. Applied before uvicorn starts.
+
+    Does NOT set macOS QoS BACKGROUND — that starves the event loop thread
+    and makes HTTP endpoints unresponsive during heavy computation.
+    nice(15) is sufficient for being a good CPU citizen.
+    """
     try:
         os.nice(NICE_VALUE)
         logger.info("Set nice value to %d", NICE_VALUE)
     except OSError:
         logger.debug("Could not set nice value")
-
-    try:
-        lib = ctypes.CDLL(ctypes.util.find_library("System"))
-        QOS_CLASS_BACKGROUND = 0x09
-        lib.pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0)
-        logger.info("Set macOS QoS to BACKGROUND")
-    except Exception:
-        logger.debug("Could not set macOS QoS class")
 
 
 def _write_pid() -> None:
@@ -388,16 +384,11 @@ if __name__ == "__main__":
     atexit.register(_cleanup_pid)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
+    _set_process_priority()
+
     # Index + encoders load in a background thread.
     # HTTP is up immediately; handlers return 503 until ready.
     _background_startup()
 
     logger.info("Starting photo-embed service on %s:%d", SERVICE_HOST, SERVICE_PORT)
-
-    # Apply low priority AFTER uvicorn binds the socket, so the kernel
-    # doesn't deprioritize the bind/listen syscalls themselves.
-    @app.on_event("startup")
-    async def _on_startup():
-        _set_background_priority()
-
     uvicorn.run(app, host=SERVICE_HOST, port=SERVICE_PORT, log_level="warning")

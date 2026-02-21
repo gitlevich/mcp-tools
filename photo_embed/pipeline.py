@@ -204,6 +204,8 @@ def run_pipeline(
                     )
 
         checkpoint_records.extend(batch_records)
+        for img in batch_images:
+            img.close()
         batch_images.clear()
         batch_records.clear()
 

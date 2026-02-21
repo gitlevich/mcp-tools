@@ -236,15 +236,15 @@ class PhotoIndex:
         for model_name in self._state.enabled_models:
             npy = self._embedding_path(model_name)
             if npy.exists():
-                emb = np.load(str(npy), mmap_mode="r")
-                self._embeddings[model_name] = emb[:n_images] if len(emb) >= n_images else None
+                emb = np.load(str(npy))
+                self._embeddings[model_name] = np.array(emb[:n_images]) if len(emb) >= n_images else None
             else:
                 self._embeddings[model_name] = None
 
             meta_npy = self._meta_embedding_path(model_name)
             if meta_npy.exists():
-                meta_emb = np.load(str(meta_npy), mmap_mode="r")
-                self._meta_embeddings[model_name] = meta_emb[:n_images] if len(meta_emb) >= n_images else None
+                meta_emb = np.load(str(meta_npy))
+                self._meta_embeddings[model_name] = np.array(meta_emb[:n_images]) if len(meta_emb) >= n_images else None
             else:
                 self._meta_embeddings[model_name] = None
 
@@ -262,9 +262,9 @@ class PhotoIndex:
         for model_name in self._state.enabled_models:
             note_npy = self._note_embedding_path(model_name)
             if note_npy.exists():
-                note_emb = np.load(str(note_npy), mmap_mode="r")
+                note_emb = np.load(str(note_npy))
                 self._note_embeddings[model_name] = (
-                    note_emb[:n_notes] if len(note_emb) >= n_notes else None
+                    np.array(note_emb[:n_notes]) if len(note_emb) >= n_notes else None
                 )
             else:
                 self._note_embeddings[model_name] = None
@@ -529,7 +529,10 @@ class PhotoIndex:
                     self._meta_embeddings[model_name] = meta_emb
 
             total_added += len(cp.records)
-            self._save_state()
+            try:
+                self._save_state()
+            except OSError:
+                logger.warning("Checkpoint save failed, will retry next checkpoint", exc_info=True)
 
         note_stats = self._refresh_notes(models)
 

@@ -42,12 +42,12 @@ def thumb_key(path: Path, mtime: float) -> str:
 
 def _generate(source: Path, dest: Path, size: int) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    img = Image.open(source)
-    img = ImageOps.exif_transpose(img)
-    if img.mode not in ("RGB", "RGBA"):
-        img = img.convert("RGB")
-    img.thumbnail((size, size), Image.LANCZOS)
-    img.save(dest, "WEBP", quality=85)
+    with Image.open(source) as img:
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGB")
+        img.thumbnail((size, size), Image.LANCZOS)
+        img.save(dest, "WEBP", quality=85)
     return dest
 
 
@@ -68,8 +68,13 @@ def preview_thumbnail(source: Path, key: str) -> Path:
 
 
 def open_for_embedding(thumbnail_path: Path) -> Image.Image:
-    """Open a cached model thumbnail as RGB PIL Image."""
+    """Open a cached model thumbnail as RGB PIL Image.
+
+    Forces pixel data into memory and closes the file handle immediately
+    so the pipeline doesn't accumulate tens of thousands of open fds.
+    """
     img = Image.open(thumbnail_path)
+    img.load()  # read pixels into memory, release file handle
     if img.mode != "RGB":
         img = img.convert("RGB")
     return img

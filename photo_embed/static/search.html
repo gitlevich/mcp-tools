@@ -813,7 +813,7 @@
   </div>
   <div class="status-body">
     <span><span class="stat-label">Images: </span><span class="stat-value" id="statImages">--</span></span>
-    <span><span class="stat-label">Notes: </span><span class="stat-value" id="statChunks">--</span></span>
+    <span id="statChunksWrap"><span class="stat-label">Notes: </span><span class="stat-value" id="statChunks">--</span></span>
     <span><span class="stat-label">Models: </span><span class="stat-value" id="statModels">--</span></span>
     <span class="status-folders" id="statFolders"></span>
     <span class="status-activity" id="statActivity"></span>
@@ -859,13 +859,38 @@ searchClear.addEventListener('click', () => {
 });
 updateClearBtn();
 
+const NOTES_PREF_KEY = 'photo-search-notes-enabled';
+
+function loadNotesPref() {
+  try { return localStorage.getItem(NOTES_PREF_KEY) !== 'false'; } catch { return true; }
+}
+function saveNotesPref(on) {
+  localStorage.setItem(NOTES_PREF_KEY, on ? 'true' : 'false');
+}
+
+optNotes.checked = loadNotesPref();
+
+function notesEnabled() { return optNotes.checked; }
+
 function updateBtnColor() {
   const notesOnly = optNotes.checked && !optPhotos.checked;
   searchBtn.classList.toggle('notes-only', notesOnly);
   searchOptsToggle.classList.toggle('notes-only', notesOnly);
 }
+
+function applyNotesVisibility() {
+  const on = notesEnabled();
+  saveNotesPref(on);
+  updateBtnColor();
+  if (!on) {
+    notesSection.classList.remove('visible');
+    contentArea.classList.remove('note-focus');
+  }
+  document.getElementById('statChunksWrap').style.display = on ? '' : 'none';
+}
+
 optPhotos.addEventListener('change', updateBtnColor);
-optNotes.addEventListener('change', updateBtnColor);
+optNotes.addEventListener('change', applyNotesVisibility);
 
 searchOptsToggle.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -1483,7 +1508,7 @@ function openLightbox(result) {
   lightbox.classList.add('active');
   annotationInput.value = '';
   loadAnnotations(result.path);
-  searchNotesForImage(result);
+  if (notesEnabled()) searchNotesForImage(result);
 }
 
 function searchNotesForImage(result) {
@@ -1747,10 +1772,9 @@ function folderName(path) {
 
 async function pollStatus() {
   try {
-    const [resp, thoughtResp] = await Promise.all([
-      fetch('/status'),
-      fetch('/thought-status').catch(() => null),
-    ]);
+    const promises = [fetch('/status')];
+    if (notesEnabled()) promises.push(fetch('/thought-status').catch(() => null));
+    const [resp, thoughtResp = null] = await Promise.all(promises);
     const s = await resp.json();
     const ts = thoughtResp ? await thoughtResp.json().catch(() => ({})) : {};
     const n = s.total_images || 0;
@@ -1826,11 +1850,10 @@ async function doRefresh() {
   statusDot.classList.add('busy');
 
   try {
-    // Refresh both photo-embed and thought-index in parallel
-    const [photoResp, thoughtResp] = await Promise.all([
-      fetch('/refresh', { method: 'POST' }),
-      fetch('/search-thoughts-reindex', { method: 'POST' }).catch(() => null),
-    ]);
+    // Refresh photo-embed (and thought-index if notes enabled)
+    const promises = [fetch('/refresh', { method: 'POST' })];
+    if (notesEnabled()) promises.push(fetch('/search-thoughts-reindex', { method: 'POST' }).catch(() => null));
+    const [photoResp, thoughtResp = null] = await Promise.all(promises);
     const stats = await photoResp.json();
     const parts = [];
     if (stats.new) parts.push(`+${stats.new} new`);
@@ -1858,6 +1881,7 @@ async function doRefresh() {
   }
 }
 
+applyNotesVisibility();
 pollStatus();
 setInterval(pollStatus, 5000);
 
