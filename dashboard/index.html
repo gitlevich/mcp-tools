@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Tools Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+  }
+  h1 { font-size: 1.5rem; font-weight: 600; }
+  .refresh-btn {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .refresh-btn:hover { border-color: var(--blue); }
+  .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
+  .reindex-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    margin-top: 0.75rem;
+  }
+  .reindex-btn:hover { border-color: var(--yellow); color: var(--yellow); }
+  .reindex-btn:disabled { opacity: 0.5; cursor: wait; }
+  .reindex-result {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--green);
+  }
+  .reindex-result.error { color: var(--red); }
+  .last-updated {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.25rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--text-dim); }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .card-title { font-size: 1.1rem; font-weight: 600; }
+  .badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  .badge-running { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+  .badge-error   { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+  .badge-unknown { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+  .badge-loading { background: rgba(88, 166, 255, 0.15); color: var(--blue); }
+  .card-body { font-size: 0.85rem; }
+  .stat-line {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-line:last-child { border-bottom: none; }
+  .stat-label { color: var(--text-dim); }
+  .stat-value { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .detail-block {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg);
+    border-radius: 6px;
+    font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .error-text { color: var(--red); }
+  .activity-section {
+    margin-top: 0.75rem;
+    padding: 0.6rem;
+    background: var(--bg);
+    border-radius: 6px;
+    font-size: 0.8rem;
+  }
+  .activity-state {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-idle { background: var(--green); }
+  .dot-busy { background: var(--yellow); animation: pulse 1s ease-in-out infinite; }
+  .dot-dead { background: var(--red); }
+  .activity-elapsed {
+    margin-left: auto;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 0.4rem;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--blue);
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+  .progress-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 0.15rem;
+  }
+  .recent-list {
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.35rem;
+  }
+  .recent-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.15rem 0;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .skeleton {
+    height: 14px;
+    background: var(--border);
+    border-radius: 4px;
+    animation: pulse 1.5s ease-in-out infinite;
+    margin-bottom: 0.5rem;
+  }
+  .skeleton:nth-child(2) { width: 75%; }
+  .skeleton:nth-child(3) { width: 60%; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>MCP Tools</h1>
+      <span class="last-updated" id="lastUpdated"></span>
+    </div>
+    <button class="refresh-btn" id="refreshBtn" onclick="refresh()">Refresh</button>
+  </header>
+  <div class="grid" id="grid"></div>
+
+<script>
+const TOOL_META = {
+  'project-embed': {
+    description: 'Semantic code search',
+    parser: parseProjectEmbed,
+    hasReindex: true,
+  },
+  'photo-embed': {
+    description: 'Photo search (CLIP + SigLIP)',
+    parser: parsePhotoEmbed,
+    hasReindex: true,
+    hasRefresh: true,
+  },
+  'thought-index': {
+    description: 'Notes & documents search',
+    parser: parseThoughtIndex,
+    hasReindex: true,
+  },
+  'rename': {
+    description: 'AST-aware symbol renaming',
+    parser: parseRename,
+    hasReindex: false,
+  },
+};
+
+function parseProjectEmbed(tools) {
+  const text = tools['index_status'] || '';
+  const stats = {};
+  for (const line of text.split('\n')) {
+    const [key, ...rest] = line.split(':');
+    if (key && rest.length) stats[key.trim()] = rest.join(':').trim();
+  }
+  return {
+    stats: [
+      { label: 'Files indexed', value: stats['Total files indexed'] || '0' },
+      { label: 'Chunks', value: stats['Total chunks'] || '0' },
+      { label: 'Pending re-index', value: stats['Files pending re-index'] || '0' },
+      { label: 'Last scan', value: stats['Last scan'] || 'never' },
+    ],
+  };
+}
+
+function parsePhotoEmbed(tools) {
+  const text = tools['index_status'] || '';
+  const lines = text.split('\n');
+  const get = (prefix) => {
+    const line = lines.find(l => l.trimStart().startsWith(prefix));
+    return line ? line.split(':').slice(1).join(':').trim() : '?';
+  };
+  const folders = lines.filter(l => l.startsWith('  /'));
+  const embeddings = lines.filter(l => l.match(/^\s{2}\S+-vit/));
+  return {
+    stats: [
+      { label: 'Total images', value: get('Total images') },
+      { label: 'Annotated', value: get('Annotated images') },
+      { label: 'Models', value: get('Models') },
+      { label: 'Photos library', value: get('Photos library') },
+      { label: 'Folders', value: get('Folders') },
+      { label: 'Last scan', value: get('Last scan') },
+    ],
+    detail: embeddings.length ? 'Embeddings:\n' + embeddings.map(l => l.trim()).join('\n') : null,
+  };
+}
+
+function parseThoughtIndex(tools) {
+  const text = tools['list_sources'] || '';
+  if (text.startsWith('Error')) {
+    return { stats: [{ label: 'Status', value: 'Index error' }], detail: text };
+  }
+  const sources = text.split('\n').filter(l => l.trim().startsWith(''));
+  return {
+    stats: [
+      { label: 'Sources', value: String(sources.length || (text.includes('No sources') ? 0 : '?')) },
+    ],
+    detail: text || null,
+  };
+}
+
+function parseRename(_tools) {
+  return {
+    stats: [
+      { label: 'Type', value: 'Stateless' },
+      { label: 'Languages', value: 'Python, TypeScript' },
+    ],
+  };
+}
+
+function renderCard(server) {
+  const meta = TOOL_META[server.name] || {};
+  const parser = meta.parser || (() => ({ stats: [] }));
+  const badgeClass = {
+    running: 'badge-running',
+    error: 'badge-error',
+    unknown: 'badge-unknown',
+  }[server.status] || 'badge-unknown';
+
+  let parsed;
+  try {
+    parsed = parser(server.tools || {});
+  } catch {
+    parsed = { stats: [], detail: 'Parse error' };
+  }
+
+  let html = `
+    <div class="card-header">
+      <span class="card-title">${server.name}</span>
+      <span class="badge ${badgeClass}">${server.status}</span>
+    </div>
+    <div class="card-body">
+      <div style="color: var(--text-dim); margin-bottom: 0.75rem; font-size: 0.8rem;">
+        ${meta.description || ''}
+      </div>`;
+
+  if (server.error) {
+    html += `<div class="error-text">${server.error}</div>`;
+  }
+
+  for (const s of parsed.stats || []) {
+    html += `<div class="stat-line">
+      <span class="stat-label">${s.label}</span>
+      <span class="stat-value">${s.value}</span>
+    </div>`;
+  }
+
+  if (parsed.detail) {
+    html += `<div class="detail-block">${parsed.detail}</div>`;
+  }
+
+  html += `<div class="activity-section" data-activity="${server.name}"></div>`;
+
+  if (meta.hasRefresh && server.status === 'running') {
+    html += `<button class="reindex-btn" onclick="refreshIndex('${server.name}', this)" style="border-color:var(--green);color:var(--green)">Refresh Index</button> `;
+  }
+  if (meta.hasReindex && server.status === 'running') {
+    html += `<button class="reindex-btn" onclick="reindex('${server.name}', this)">Full Reindex</button>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderLoading() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (const name of Object.keys(TOOL_META)) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-title">${name}</span>
+        <span class="badge badge-loading">connecting</span>
+      </div>
+      <div class="card-body">
+        <div class="skeleton" style="width:100%"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+      </div>`;
+    grid.appendChild(card);
+  }
+}
+
+function renderResults(servers) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (const name of Object.keys(TOOL_META)) {
+    const server = servers.find(s => s.name === name) || { name, status: 'unknown', tools: {}, error: 'Not in response' };
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = renderCard(server);
+    grid.appendChild(card);
+  }
+  document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+async function refresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = 'Querying...';
+  renderLoading();
+  try {
+    const resp = await fetch('/api/status');
+    const data = await resp.json();
+    renderResults(data);
+  } catch (e) {
+    renderResults([]);
+    document.getElementById('lastUpdated').textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+  }
+}
+
+async function refreshIndex(serverName, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Refreshing...';
+  const resultEl = document.createElement('div');
+  resultEl.className = 'reindex-result';
+  btn.parentNode.insertBefore(resultEl, btn.nextSibling);
+  try {
+    const resp = await fetch(`/api/refresh/${serverName}`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.result) {
+      resultEl.textContent = data.result;
+    } else {
+      resultEl.className = 'reindex-result error';
+      resultEl.textContent = data.error;
+    }
+    refresh();
+  } catch (e) {
+    resultEl.className = 'reindex-result error';
+    resultEl.textContent = e.message;
+    btn.disabled = false;
+    btn.textContent = 'Refresh Index';
+  }
+}
+
+async function reindex(serverName, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Reindexing...';
+  const resultEl = document.createElement('div');
+  resultEl.className = 'reindex-result';
+  btn.parentNode.insertBefore(resultEl, btn.nextSibling);
+  try {
+    const resp = await fetch(`/api/reindex/${serverName}`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.result) {
+      resultEl.textContent = data.result;
+    } else {
+      resultEl.className = 'reindex-result error';
+      resultEl.textContent = data.error;
+    }
+    refresh();
+  } catch (e) {
+    resultEl.className = 'reindex-result error';
+    resultEl.textContent = e.message;
+    btn.disabled = false;
+    btn.textContent = 'Reindex';
+  }
+}
+
+// --- Activity polling ---
+
+let activityData = {};
+
+function formatDuration(seconds) {
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+function renderActivitySection(serverName) {
+  const a = activityData[serverName];
+  if (!a) return '<span style="color:var(--text-dim)">No activity data</span>';
+
+  let html = '';
+  if (!a.alive) {
+    html += '<div class="activity-state"><span class="activity-dot dot-dead"></span> Not running</div>';
+  } else if (a.state === 'busy') {
+    const elapsed = (Date.now() / 1000) - a.started_at;
+    html += `<div class="activity-state"><span class="activity-dot dot-busy"></span> ${a.operation}<span class="activity-elapsed">${formatDuration(elapsed)}</span></div>`;
+    if (a.progress) {
+      const pct = Math.round((a.progress.current / a.progress.total) * 100);
+      html += `<div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+      html += `<div class="progress-label">${a.progress.current}/${a.progress.total}${a.progress.detail ? ' - ' + a.progress.detail : ''}</div>`;
+    }
+  } else {
+    html += '<div class="activity-state"><span class="activity-dot dot-idle"></span> Idle</div>';
+  }
+
+  if (a.recent && a.recent.length > 0) {
+    html += '<div class="recent-list">';
+    for (const r of a.recent.slice(0, 5)) {
+      html += `<div class="recent-entry"><span>${r.operation}</span><span>${formatDuration(r.duration_s)}</span></div>`;
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+function updateActivityDisplay() {
+  for (const name of Object.keys(TOOL_META)) {
+    const el = document.querySelector(`[data-activity="${name}"]`);
+    if (el) el.innerHTML = renderActivitySection(name);
+  }
+}
+
+async function pollActivity() {
+  try {
+    const resp = await fetch('/api/activity');
+    const data = await resp.json();
+    activityData = {};
+    for (const entry of data) {
+      activityData[entry.server] = entry;
+    }
+    updateActivityDisplay();
+  } catch {
+    // silently retry next interval
+  }
+}
+
+setInterval(pollActivity, 2000);
+pollActivity();
+
+refresh();
+</script>
+</body>
+</html>

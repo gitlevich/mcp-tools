@@ -1,0 +1,25 @@
+[project]
+name = "photo-embed-mcp"
+version = "0.1.0"
+description = "MCP server for semantic photo search using CLIP, SigLIP, and DINOv2"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "torch>=2.1.0",
+    "open-clip-torch>=2.26.0",
+    "transformers>=4.40.0,<5.0.0",
+    "timm>=1.0.0",
+    "pillow>=10.0.0",
+    "pillow-heif>=0.18.0",
+    "numpy>=1.26.0",
+    "pyobjc-framework-Cocoa",
+    "reverse_geocode>=1.6.0",
+]
+
+[tool.setuptools]
+py-modules = ["config", "models", "thumbnails", "indexer", "server", "picker", "photos_library"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]

@@ -1,0 +1,19 @@
+[project]
+name = "thought-index-mcp"
+version = "0.1.0"
+description = "MCP server for semantic search across personal notes and thoughts"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "torch>=2.1.0",
+]
+
+[tool.setuptools]
+py-modules = ["config", "chunker", "embedder", "indexer", "sources", "picker", "server"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]

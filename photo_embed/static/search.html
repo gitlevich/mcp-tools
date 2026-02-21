@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Search</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --amber: #d29922;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Search bar */
+  .search-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .search-bar h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .search-input {
+    flex: 1;
+    max-width: 600px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--blue); }
+  .search-input::placeholder { color: var(--text-dim); }
+  .search-btn {
+    background: var(--blue);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .search-btn:hover { opacity: 0.9; }
+  .search-btn:disabled { opacity: 0.5; cursor: wait; }
+  .search-meta {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* Search history dropdown */
+  .search-wrapper {
+    position: relative;
+    flex: 1;
+    max-width: 600px;
+  }
+  .search-wrapper .search-input {
+    max-width: none;
+    width: 100%;
+  }
+  .search-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+    z-index: 20;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .search-dropdown.visible { display: block; }
+  .search-dropdown-section {
+    padding: 0.3rem 0.6rem 0.15rem;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--text);
+    border-bottom: 1px solid rgba(48,54,61,0.4);
+  }
+  .search-dropdown-item:last-child { border-bottom: none; }
+  .search-dropdown-item:hover { background: rgba(88,166,255,0.08); }
+  .search-dropdown-item .item-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-dropdown-item .item-action {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .search-dropdown-item:hover .item-action { opacity: 1; }
+  .search-dropdown-item .item-action:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .search-dropdown-item .item-pin {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--blue);
+  }
+
+  /* Results grid */
+  .results {
+    padding: 1.25rem 2rem 4rem;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+
+  /* Image card */
+  .card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.15s;
+    cursor: pointer;
+  }
+  .card-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    background: rgba(63, 185, 80, 0.85);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .card-badge.has-tasks { background: rgba(210, 153, 34, 0.9); }
+  .card-badge svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: #fff;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .card:hover {
+    border-color: var(--blue);
+    transform: translateY(-2px);
+  }
+  /* Annotation overlay on hover */
+  .card-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85) 25%);
+    padding: 2rem 0.6rem 0.5rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 1;
+    max-height: 60%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .card:hover .card-overlay { opacity: 1; }
+  .card-overlay-scroll {
+    overflow-y: auto;
+    max-height: 100%;
+  }
+  .card-overlay-line {
+    font-size: 0.7rem;
+    color: var(--green);
+    padding: 0.1rem 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-overlay-line:first-child {
+    font-size: 0.75rem;
+    white-space: normal;
+  }
+  .card-overlay-line.task {
+    color: var(--amber, #d29922);
+    font-style: italic;
+  }
+  .card-img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+    background: #0a0c10;
+  }
+  .card-info {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.75rem;
+  }
+  .card-filename {
+    color: var(--text);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 0.25rem;
+  }
+  .card-scores {
+    display: flex;
+    gap: 0.5rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .card-annotations {
+    margin-top: 0.3rem;
+    color: var(--green);
+    font-size: 0.7rem;
+  }
+  /* Glow animation for resolved tasks */
+  @keyframes glow {
+    0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.6); }
+    50% { box-shadow: 0 0 12px 4px rgba(63, 185, 80, 0.4); }
+    100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+  }
+  .card.glow { animation: glow 1.5s ease-out; }
+
+  /* States */
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-dim);
+  }
+  .empty-state h2 {
+    font-size: 1.2rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+  .empty-state p {
+    font-size: 0.85rem;
+  }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Status panel */
+  .status-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    transition: transform 0.25s ease;
+  }
+  .status-panel.collapsed .status-body { display: none; }
+  .status-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 2rem;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .status-toggle:hover { color: var(--text); }
+  .status-toggle .arrow {
+    transition: transform 0.2s;
+    font-size: 0.6rem;
+  }
+  .status-panel.collapsed .status-toggle .arrow { transform: rotate(180deg); }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+  .status-dot.busy {
+    background: var(--blue);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .status-body {
+    padding: 0.5rem 2rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+  }
+  .status-body .stat-label { color: var(--text-dim); }
+  .status-body .stat-value { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .status-folders {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .refresh-btn {
+    background: transparent;
+    color: var(--blue);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .refresh-btn:hover { border-color: var(--blue); }
+  .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
+  .status-activity {
+    color: var(--blue);
+    font-style: italic;
+  }
+
+  /* Lightbox */
+  .lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.92);
+    justify-content: center;
+    align-items: center;
+    cursor: zoom-out;
+  }
+  .lightbox.active { display: flex; }
+  .lightbox img {
+    max-width: 95vw;
+    max-height: 95vh;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+  .lightbox-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 2rem;
+    cursor: default;
+  }
+  .lightbox-path {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 0.5rem;
+  }
+  .annotation-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    max-height: 5.5rem;
+    overflow-y: auto;
+  }
+  .annotation-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(63, 185, 80, 0.3);
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    cursor: text;
+    flex-shrink: 0;
+  }
+  .annotation-tag .tag-text {
+    outline: none;
+    min-width: 1ch;
+  }
+  .annotation-tag .tag-text[contenteditable="true"] {
+    background: var(--bg);
+    border-radius: 2px;
+    padding: 0 0.2rem;
+    color: var(--text);
+  }
+  .annotation-tag.task {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--amber);
+    border-color: rgba(210, 153, 34, 0.3);
+    font-style: italic;
+  }
+  .annotation-tag .remove-tag {
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 0.8rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .annotation-tag .remove-tag:hover { opacity: 1; }
+  .annotation-input {
+    flex: 1;
+    min-width: 150px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    outline: none;
+  }
+  .annotation-input:focus { border-color: var(--green); }
+  .annotation-input::placeholder { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div class="search-bar">
+  <h1>Photo Search</h1>
+  <div class="search-wrapper">
+    <input
+      class="search-input"
+      id="query"
+      type="text"
+      placeholder="Describe what you're looking for..."
+      autofocus
+      autocomplete="off"
+    >
+    <div class="search-dropdown" id="searchDropdown"></div>
+  </div>
+  <button class="search-btn" id="searchBtn" onclick="doSearch()">Search</button>
+  <span class="search-meta" id="searchMeta"></span>
+</div>
+
+<div class="results" id="results">
+  <div class="empty-state">
+    <h2>Search your photos</h2>
+    <p>Type a description like "sunset at the beach" or "birthday party"</p>
+  </div>
+</div>
+
+<div class="status-panel collapsed" id="statusPanel">
+  <div class="status-toggle" onclick="togglePanel()">
+    <span class="arrow">&#9660;</span>
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusSummary">Loading...</span>
+  </div>
+  <div class="status-body">
+    <span><span class="stat-label">Images: </span><span class="stat-value" id="statImages">--</span></span>
+    <span><span class="stat-label">Models: </span><span class="stat-value" id="statModels">--</span></span>
+    <span class="status-folders" id="statFolders"></span>
+    <span class="status-activity" id="statActivity"></span>
+    <button class="refresh-btn" id="addFolderBtn" onclick="doPickFolder()">Add Folder</button>
+    <button class="refresh-btn" id="refreshBtn" onclick="doRefresh()">Refresh</button>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <img id="lightboxImg">
+  <div class="lightbox-panel" onclick="event.stopPropagation()">
+    <div class="lightbox-path" id="lightboxPath"></div>
+    <div class="annotation-row" id="annotationRow">
+      <input
+        class="annotation-input"
+        id="annotationInput"
+        type="text"
+        placeholder="Add annotation... (Enter to save)"
+      >
+    </div>
+  </div>
+</div>
+
+<script>
+const queryInput = document.getElementById('query');
+const searchBtn = document.getElementById('searchBtn');
+const searchMeta = document.getElementById('searchMeta');
+const resultsDiv = document.getElementById('results');
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
+const lightboxPath = document.getElementById('lightboxPath');
+const annotationRow = document.getElementById('annotationRow');
+const annotationInput = document.getElementById('annotationInput');
+let _lightboxResult = null;
+
+const searchDropdown = document.getElementById('searchDropdown');
+const HISTORY_KEY = 'photo-search-history';
+const PRESETS_KEY = 'photo-search-presets';
+const MAX_HISTORY = 20;
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
+}
+function saveHistoryList(list) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+}
+function pushHistory(query) {
+  const list = loadHistory().filter(q => q !== query);
+  list.unshift(query);
+  if (list.length > MAX_HISTORY) list.length = MAX_HISTORY;
+  saveHistoryList(list);
+}
+function removeHistory(query) {
+  saveHistoryList(loadHistory().filter(q => q !== query));
+}
+function loadPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESETS_KEY)) || []; } catch { return []; }
+}
+function savePresetList(list) {
+  localStorage.setItem(PRESETS_KEY, JSON.stringify(list));
+}
+function addPreset(query) {
+  const list = loadPresets();
+  if (!list.includes(query)) { list.push(query); savePresetList(list); }
+}
+function removePreset(query) {
+  savePresetList(loadPresets().filter(q => q !== query));
+}
+
+function renderDropdown() {
+  const presets = loadPresets();
+  const history = loadHistory().filter(q => !presets.includes(q));
+  if (!presets.length && !history.length) {
+    searchDropdown.classList.remove('visible');
+    return;
+  }
+  let html = '';
+  if (presets.length) {
+    html += '<div class="search-dropdown-section">Presets</div>';
+    for (const q of presets) {
+      html += `<div class="search-dropdown-item" data-query="${escapeAttr(q)}">`;
+      html += `<svg class="item-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V5a1 1 0 0 1 1-1 1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z"/></svg>`;
+      html += `<span class="item-text">${escapeHtml(q)}</span>`;
+      html += `<span class="item-action" data-unpin="${escapeAttr(q)}" title="Remove preset">unpin</span>`;
+      html += '</div>';
+    }
+  }
+  if (history.length) {
+    html += '<div class="search-dropdown-section">Recent</div>';
+    for (const q of history) {
+      html += `<div class="search-dropdown-item" data-query="${escapeAttr(q)}">`;
+      html += `<span class="item-text">${escapeHtml(q)}</span>`;
+      html += `<span class="item-action" data-pin="${escapeAttr(q)}" title="Save as preset">pin</span>`;
+      html += `<span class="item-action" data-remove="${escapeAttr(q)}" title="Remove">\u00d7</span>`;
+      html += '</div>';
+    }
+  }
+  searchDropdown.innerHTML = html;
+  searchDropdown.classList.add('visible');
+}
+
+function escapeAttr(s) {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function showDropdown() { renderDropdown(); }
+function hideDropdown() {
+  setTimeout(() => {
+    if (!searchDropdown.contains(document.activeElement)) {
+      searchDropdown.classList.remove('visible');
+    }
+  }, 150);
+}
+
+searchDropdown.addEventListener('mousedown', (e) => {
+  // Prevent blur on input when clicking dropdown
+  e.preventDefault();
+  const item = e.target.closest('.search-dropdown-item');
+  const pinBtn = e.target.closest('[data-pin]');
+  const unpinBtn = e.target.closest('[data-unpin]');
+  const removeBtn = e.target.closest('[data-remove]');
+
+  if (unpinBtn) {
+    removePreset(unpinBtn.dataset.unpin);
+    renderDropdown();
+    return;
+  }
+  if (pinBtn) {
+    addPreset(pinBtn.dataset.pin);
+    renderDropdown();
+    return;
+  }
+  if (removeBtn) {
+    removeHistory(removeBtn.dataset.remove);
+    renderDropdown();
+    return;
+  }
+  if (item) {
+    queryInput.value = item.dataset.query;
+    searchDropdown.classList.remove('visible');
+    doSearch();
+  }
+});
+
+queryInput.addEventListener('focus', showDropdown);
+queryInput.addEventListener('click', showDropdown);
+queryInput.addEventListener('blur', hideDropdown);
+
+queryInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { searchDropdown.classList.remove('visible'); doSearch(); }
+  if (e.key === 'Escape') {
+    if (searchDropdown.classList.contains('visible')) {
+      searchDropdown.classList.remove('visible');
+    } else {
+      queryInput.value = '';
+    }
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && lightbox.classList.contains('active')
+      && document.activeElement !== annotationInput) {
+    lightbox.classList.remove('active');
+    lightboxImg.src = '';
+    _lightboxResult = null;
+  }
+});
+
+async function doSearch() {
+  const query = queryInput.value.trim();
+  if (!query) return;
+
+  pushHistory(query);
+  searchBtn.disabled = true;
+  searchMeta.innerHTML = '<span class="spinner"></span>Searching...';
+
+  const t0 = performance.now();
+  try {
+    const resp = await fetch('/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, top_k: 50 }),
+    });
+    const data = await resp.json();
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+
+    if (!data.length) {
+      resultsDiv.innerHTML = `
+        <div class="empty-state">
+          <h2>No matching photos</h2>
+          <p>Try a different description</p>
+        </div>`;
+      searchMeta.textContent = `0 results (${elapsed}s)`;
+      return;
+    }
+
+    searchMeta.textContent = `${data.length} results (${elapsed}s)`;
+    _lastResults = data;
+    renderResults(data);
+  } catch (e) {
+    resultsDiv.innerHTML = `
+      <div class="empty-state">
+        <h2>Search failed</h2>
+        <p>${e.message}</p>
+      </div>`;
+    searchMeta.textContent = 'Error';
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+function thumbUrl(previewPath) {
+  // preview_thumbnail is like "/path/to/.cache/photo-embed/thumbnails/preview/abc123.webp"
+  // extract the filename and serve via /thumbnails/
+  const parts = previewPath.split('/');
+  return '/thumbnails/' + parts[parts.length - 1];
+}
+
+function filename(path) {
+  const parts = path.split('/');
+  return parts[parts.length - 1];
+}
+
+function renderResults(results) {
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+
+  for (const r of results) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.onclick = () => openLightbox(r);
+
+    const scores = Object.entries(r.model_scores)
+      .map(([m, s]) => `${m.replace(/-vit.*/, '')}: ${s.toFixed(3)}`)
+      .join(' | ');
+
+    const anns = r.annotations || [];
+    const hasTasks = anns.some(a => a.startsWith('@task '));
+    const hasNotes = anns.length > 0;
+    let html = '';
+    if (hasNotes) {
+      const cls = hasTasks ? 'card-badge has-tasks' : 'card-badge';
+      html += `<div class="${cls}"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>`;
+      html += '<div class="card-overlay"><div class="card-overlay-scroll">';
+      for (const a of anns) {
+        const isTask = a.startsWith('@task ');
+        html += `<div class="card-overlay-line${isTask ? ' task' : ''}">${escapeHtml(a)}</div>`;
+      }
+      html += '</div></div>';
+    }
+    html += `<img class="card-img" src="${thumbUrl(r.preview_thumbnail)}" loading="lazy" alt="">`;
+    html += '<div class="card-info">';
+    html += `<div class="card-filename" title="${r.path}">${filename(r.path)}</div>`;
+    html += `<div class="card-scores">${scores}</div>`;
+    html += '</div>';
+
+    card.innerHTML = html;
+    grid.appendChild(card);
+  }
+
+  resultsDiv.innerHTML = '';
+  resultsDiv.appendChild(grid);
+}
+
+function openLightbox(result) {
+  _lightboxResult = result;
+  lightboxImg.src = thumbUrl(result.preview_thumbnail);
+  lightboxPath.textContent = result.path;
+  lightbox.classList.add('active');
+  annotationInput.value = '';
+  loadAnnotations(result.path);
+}
+
+function closeLightbox(e) {
+  if (e && e.target !== lightbox) return;
+  lightbox.classList.remove('active');
+  lightboxImg.src = '';
+  _lightboxResult = null;
+}
+
+function renderAnnotationTags(annotations) {
+  annotationRow.querySelectorAll('.annotation-tag').forEach(t => t.remove());
+  for (const text of annotations) {
+    const tag = document.createElement('span');
+    tag.className = text.startsWith('@task ') ? 'annotation-tag task' : 'annotation-tag';
+
+    const span = document.createElement('span');
+    span.className = 'tag-text';
+    span.textContent = text;
+    span.onclick = (e) => { e.stopPropagation(); startEditTag(span, text); };
+
+    const x = document.createElement('span');
+    x.className = 'remove-tag';
+    x.title = 'Remove';
+    x.textContent = '\u00d7';
+    x.onclick = (e) => { e.stopPropagation(); removeAnnotation(text); };
+
+    tag.appendChild(span);
+    tag.appendChild(x);
+    annotationRow.insertBefore(tag, annotationInput);
+  }
+}
+
+function startEditTag(span, originalText) {
+  span.contentEditable = 'true';
+  span.focus();
+  // Select all text
+  const range = document.createRange();
+  range.selectNodeContents(span);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  function commit() {
+    span.contentEditable = 'false';
+    const newText = span.textContent.trim();
+    span.removeEventListener('keydown', onKey);
+    span.removeEventListener('blur', onBlur);
+    if (!newText || newText === originalText) {
+      span.textContent = originalText;
+      return;
+    }
+    editAnnotation(originalText, newText);
+  }
+  function cancel() {
+    span.contentEditable = 'false';
+    span.textContent = originalText;
+    span.removeEventListener('keydown', onKey);
+    span.removeEventListener('blur', onBlur);
+  }
+  function onKey(e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  }
+  function onBlur() { commit(); }
+  span.addEventListener('keydown', onKey);
+  span.addEventListener('blur', onBlur);
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function loadAnnotations(path) {
+  try {
+    const resp = await fetch('/annotations?path=' + encodeURIComponent(path));
+    const annotations = await resp.json();
+    renderAnnotationTags(annotations);
+  } catch { /* ignore */ }
+}
+
+async function addAnnotation(text) {
+  if (!_lightboxResult || !text.trim()) return;
+  try {
+    await fetch('/annotate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: _lightboxResult.path, text: text.trim() }),
+    });
+    annotationInput.value = '';
+    loadAnnotations(_lightboxResult.path);
+    // Update the result object so the card shows it too
+    if (!_lightboxResult.annotations.includes(text.trim())) {
+      _lightboxResult.annotations.push(text.trim());
+      updateCardAnnotations(_lightboxResult);
+    }
+  } catch { /* ignore */ }
+}
+
+async function editAnnotation(oldText, newText) {
+  if (!_lightboxResult) return;
+  try {
+    await fetch('/remove-annotation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: _lightboxResult.path, text: oldText }),
+    });
+    await fetch('/annotate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: _lightboxResult.path, text: newText }),
+    });
+    _lightboxResult.annotations = _lightboxResult.annotations.map(a => a === oldText ? newText : a);
+    updateCardAnnotations(_lightboxResult);
+    loadAnnotations(_lightboxResult.path);
+  } catch { /* ignore */ }
+}
+
+async function removeAnnotation(text) {
+  if (!_lightboxResult) return;
+  try {
+    await fetch('/remove-annotation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: _lightboxResult.path, text }),
+    });
+    loadAnnotations(_lightboxResult.path);
+    _lightboxResult.annotations = _lightboxResult.annotations.filter(a => a !== text);
+    updateCardAnnotations(_lightboxResult);
+  } catch { /* ignore */ }
+}
+
+function updateCardAnnotations(result, shouldGlow) {
+  const cards = document.querySelectorAll('.card');
+  for (const card of cards) {
+    const fn = card.querySelector('.card-filename');
+    if (fn && fn.title === result.path) {
+      const anns = result.annotations || [];
+      const hasTasks = anns.some(a => a.startsWith('@task '));
+      let badge = card.querySelector('.card-badge');
+      let overlay = card.querySelector('.card-overlay');
+
+      if (anns.length) {
+        // Badge
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+          card.insertBefore(badge, card.firstChild);
+        }
+        badge.className = hasTasks ? 'card-badge has-tasks' : 'card-badge';
+
+        // Overlay
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.className = 'card-overlay';
+          card.insertBefore(overlay, card.querySelector('.card-img'));
+        }
+        let oh = '<div class="card-overlay-scroll">';
+        for (const a of anns) {
+          const isTask = a.startsWith('@task ');
+          oh += `<div class="card-overlay-line${isTask ? ' task' : ''}">${escapeHtml(a)}</div>`;
+        }
+        oh += '</div>';
+        overlay.innerHTML = oh;
+      } else {
+        if (badge) badge.remove();
+        if (overlay) overlay.remove();
+      }
+
+      if (shouldGlow) {
+        card.classList.remove('glow');
+        void card.offsetWidth; // force reflow to restart animation
+        card.classList.add('glow');
+        setTimeout(() => card.classList.remove('glow'), 1600);
+      }
+      break;
+    }
+  }
+}
+
+annotationInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.stopPropagation();
+    addAnnotation(annotationInput.value);
+  }
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    closeLightbox();
+  }
+});
+
+// --- Task polling (detect resolved tasks, trigger glow) ---
+
+let _lastResults = []; // current search results for task polling
+
+async function pollTasks() {
+  if (!_lastResults.length) return;
+  // Only poll cards that have tasks
+  const taskResults = _lastResults.filter(r => r.annotations && r.annotations.some(a => a.startsWith('@task ')));
+  for (const r of taskResults) {
+    try {
+      const resp = await fetch('/annotations?path=' + encodeURIComponent(r.path));
+      const fresh = await resp.json();
+      const oldTasks = r.annotations.filter(a => a.startsWith('@task '));
+      const newTasks = fresh.filter(a => a.startsWith('@task '));
+      if (newTasks.length < oldTasks.length) {
+        // A task was resolved
+        r.annotations = fresh;
+        updateCardAnnotations(r, true);
+        // Update lightbox if open on this image
+        if (_lightboxResult && _lightboxResult.path === r.path) {
+          _lightboxResult.annotations = fresh;
+          renderAnnotationTags(fresh);
+        }
+      } else if (JSON.stringify(r.annotations.sort()) !== JSON.stringify(fresh.sort())) {
+        r.annotations = fresh;
+        updateCardAnnotations(r, false);
+      }
+    } catch { /* ignore */ }
+  }
+}
+
+setInterval(pollTasks, 3000);
+
+// --- Status panel ---
+
+const statusPanel = document.getElementById('statusPanel');
+const statusDot = document.getElementById('statusDot');
+const statusSummary = document.getElementById('statusSummary');
+const statImages = document.getElementById('statImages');
+const statModels = document.getElementById('statModels');
+const statFolders = document.getElementById('statFolders');
+const statActivity = document.getElementById('statActivity');
+const refreshBtn = document.getElementById('refreshBtn');
+
+let _refreshing = false;
+
+function togglePanel() {
+  statusPanel.classList.toggle('collapsed');
+}
+
+function folderName(path) {
+  const parts = path.split('/');
+  return parts[parts.length - 1] || parts[parts.length - 2];
+}
+
+async function pollStatus() {
+  try {
+    const resp = await fetch('/status');
+    const s = await resp.json();
+    const n = s.total_images || 0;
+    const models = (s.enabled_models || []).map(m => m.replace(/-vit.*/, '')).join(', ');
+    const folders = (s.folders || []).map(folderName);
+    if (s.photos_library) folders.push('Photos Library');
+
+    statImages.textContent = n.toLocaleString();
+    statModels.textContent = models || '--';
+    statFolders.textContent = folders.length ? folders.join(', ') : 'No folders';
+    statFolders.title = [...(s.folders || []), s.photos_library].filter(Boolean).join('\n');
+
+    const act = s.activity;
+    if (act) {
+      statusDot.classList.add('busy');
+      const p = act.progress;
+      if (p && p.total > 0) {
+        const pct = Math.round(100 * p.current / p.total);
+        const rate = p.detail || '';
+        statusSummary.textContent = `${n.toLocaleString()} images — ${p.current.toLocaleString()} / ${p.total.toLocaleString()} (${pct}%)`;
+        statActivity.textContent = rate ? `${act.operation} — ${rate}` : act.operation;
+      } else {
+        statusSummary.textContent = `${n.toLocaleString()} images — ${act.operation}...`;
+        statActivity.textContent = act.operation;
+      }
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Busy';
+    } else if (_refreshing) {
+      statusDot.classList.add('busy');
+      statusSummary.textContent = `${n.toLocaleString()} images — refreshing...`;
+    } else {
+      statusDot.classList.remove('busy');
+      statusSummary.textContent = `${n.toLocaleString()} images`;
+      statActivity.textContent = '';
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Refresh';
+    }
+  } catch {
+    statusDot.classList.remove('busy');
+    statusSummary.textContent = 'Service unavailable';
+  }
+}
+
+async function doPickFolder() {
+  const btn = document.getElementById('addFolderBtn');
+  btn.disabled = true;
+  btn.textContent = 'Selecting...';
+  try {
+    const resp = await fetch('/pick-folder', { method: 'POST' });
+    const msg = await resp.text();
+    statActivity.textContent = msg;
+    setTimeout(() => { if (statActivity.textContent === msg) statActivity.textContent = ''; }, 5000);
+    pollStatus();
+  } catch {
+    statActivity.textContent = 'Picker failed';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add Folder';
+  }
+}
+
+async function doRefresh() {
+  if (_refreshing) return;
+  _refreshing = true;
+  refreshBtn.disabled = true;
+  refreshBtn.textContent = 'Refreshing...';
+  statActivity.textContent = 'Scanning for new photos...';
+  statusDot.classList.add('busy');
+
+  try {
+    const resp = await fetch('/refresh', { method: 'POST' });
+    const stats = await resp.json();
+    const parts = [];
+    if (stats.new) parts.push(`+${stats.new} new`);
+    if (stats.changed) parts.push(`~${stats.changed} changed`);
+    if (stats.deleted) parts.push(`-${stats.deleted} deleted`);
+    statActivity.textContent = parts.length
+      ? parts.join(', ')
+      : 'Up to date';
+    setTimeout(() => { if (!_refreshing) statActivity.textContent = ''; }, 5000);
+  } catch (e) {
+    statActivity.textContent = 'Refresh failed';
+  } finally {
+    _refreshing = false;
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = 'Refresh';
+    pollStatus();
+  }
+}
+
+pollStatus();
+setInterval(pollStatus, 5000);
+</script>
+</body>
+</html>

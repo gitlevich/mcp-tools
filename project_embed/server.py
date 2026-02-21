@@ -1,7 +1,11 @@
 import logging
+import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from activity import ActivityReporter
 
 from config import DEFAULT_TOP_K, PROJECT_ROOT, CHROMA_DIR
 from indexer import CodeIndex
@@ -10,6 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("project-embed")
+reporter = ActivityReporter("project-embed")
 
 _index: CodeIndex | None = None
 
@@ -32,28 +37,29 @@ def search(query: str, top_k: int = DEFAULT_TOP_K) -> str:
         query: Natural language description of what to find.
         top_k: Number of results to return (default 10).
     """
-    index = get_index()
-    stats = index.refresh()
+    with reporter.report("Searching code"):
+        index = get_index()
+        stats = index.refresh()
 
-    if stats["reindexed_files"] > 0:
-        logger.info(
-            "Refreshed index: %d files re-indexed, %d chunks",
-            stats["reindexed_files"],
-            stats["reindexed_chunks"],
-        )
+        if stats["reindexed_files"] > 0:
+            logger.info(
+                "Refreshed index: %d files re-indexed, %d chunks",
+                stats["reindexed_files"],
+                stats["reindexed_chunks"],
+            )
 
-    results = index.search(query, top_k=top_k)
+        results = index.search(query, top_k=top_k)
 
-    if not results:
-        return "No results found."
+        if not results:
+            return "No results found."
 
-    parts = []
-    for r in results:
-        parts.append(
-            f"--- {r.rel_path} (lines {r.start_line}-{r.end_line}, "
-            f"score: {r.score:.3f}) ---\n{r.text}"
-        )
-    return "\n\n".join(parts)
+        parts = []
+        for r in results:
+            parts.append(
+                f"--- {r.rel_path} (lines {r.start_line}-{r.end_line}, "
+                f"score: {r.score:.3f}) ---\n{r.text}"
+            )
+        return "\n\n".join(parts)
 
 
 @mcp.tool()
@@ -81,13 +87,16 @@ def reindex() -> str:
     Drops the existing index and rebuilds from scratch.
     Use when the index seems stale or corrupted.
     """
-    index = get_index()
-    stats = index.full_reindex()
-    return (
-        f"Re-indexed {stats['files']} files into {stats['chunks']} chunks "
-        f"in {stats['elapsed']:.1f}s."
-    )
+    with reporter.report("Full reindex"):
+        index = get_index()
+        stats = index.full_reindex()
+        return (
+            f"Re-indexed {stats['files']} files into {stats['chunks']} chunks "
+            f"in {stats['elapsed']:.1f}s."
+        )
 
 
 if __name__ == "__main__":
+    import atexit
+    atexit.register(reporter.cleanup)
     mcp.run(transport="stdio")
