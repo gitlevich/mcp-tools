@@ -15,13 +15,17 @@ from config import (
     CACHE_DIR,
     CONFIG_FILE,
     DEFAULT_MODELS,
+    ENTITIES_DB,
     FACE_SIMILARITY_THRESHOLD,
     FACES_FILE,
+    FACES_SCANNED_FILE,
     METADATA_FILE,
     NOTE_MAX_PER_FILE,
     NOTES_METADATA_FILE,
+    SEARCH_SCORE_RATIO,
     SUPPORTED_EXTENSIONS,
 )
+from entities import EntityStore
 from face import FaceEngine, FaceRecord
 from models import AVAILABLE_MODELS, EmbeddingModel, OpenCLIPModel, get_device
 from onnx_text import OnnxTextEncoder, export_text_encoder, load_text_encoder
@@ -146,7 +150,7 @@ def weighted_rrf(
     rankings: dict[str, list[tuple[int, float]]],
     weights: dict[str, float],
     n_images: int,
-    top_k: int,
+    top_k: int | None = None,
 ) -> list[tuple[int, float]]:
     scores: dict[int, float] = {}
     for model_name, ranked in rankings.items():
@@ -155,7 +159,7 @@ def weighted_rrf(
             scores[idx] = scores.get(idx, 0.0) + w / (RRF_K + rank + 1)
 
     sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    return sorted_items[:top_k]
+    return sorted_items[:top_k] if top_k else sorted_items
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +188,9 @@ class PhotoIndex:
         self._faces_by_label: dict[str, list[int]] = {}
         self._face_scanned_paths: set[str] = set()  # all images checked, even those without faces
         self._face_engine: FaceEngine | None = None
+
+        # Entity extraction (lazy-initialized)
+        self._entity_store: EntityStore | None = None
 
         self._load_state()
 
@@ -614,8 +621,47 @@ class PhotoIndex:
         self._state.notes.extend(new_chunks)
         self._save_state()
 
+        # Run entity extraction on new chunks
+        if n_new > 0:
+            try:
+                self.extract_entities()
+            except Exception:
+                logger.warning("Entity extraction failed during notes refresh", exc_info=True)
+
         logger.info("Notes refresh: +%d new, %d total", n_new, len(self._state.notes))
         return {"new": n_new, "total": len(self._state.notes)}
+
+    # -- entity extraction --
+
+    def _entities_db_path(self) -> Path:
+        return self._cache_dir / ENTITIES_DB.name
+
+    def get_entity_store(self) -> EntityStore:
+        if self._entity_store is None:
+            self._entity_store = EntityStore(self._entities_db_path())
+        return self._entity_store
+
+    def extract_entities(self, progress_callback=None) -> dict:
+        """Run NER on all note chunks. Incremental - skips already-processed."""
+        notes = self._state.notes
+        if not notes:
+            return {"chunks_processed": 0, "chunks_skipped": 0, "mentions_added": 0}
+
+        documents = [n.text for n in notes]
+        metadatas = [
+            {
+                "rel_path": n.rel_path,
+                "chunk_index": n.chunk_index,
+                "mtime": n.mtime,
+                "file_path": n.path,
+                "start_line": n.start_line,
+                "end_line": n.end_line,
+            }
+            for n in notes
+        ]
+
+        store = self.get_entity_store()
+        return store.extract_from_chunks(documents, metadatas, progress_callback)
 
     def search_notes(self, query: str, top_k: int = 10) -> list[NoteSearchResult]:
         """Search notes by encoding query with CLIP/SigLIP text encoder."""
@@ -765,7 +811,8 @@ class PhotoIndex:
         images: list[ImageRecord],
         annotations: dict[str, list[str]],
         n: int,
-        top_k: int,
+        top_k: int | None = None,
+        score_ratio: float = 0.0,
     ) -> list[SearchResult]:
         weights = {m: 1.0 for m in rankings}
         if "annotations" in weights:
@@ -775,11 +822,30 @@ class PhotoIndex:
 
         fused = weighted_rrf(rankings, weights, n, top_k)
 
+        # Compute per-image max visual cosine similarity for threshold filtering.
+        # We threshold on score range: cutoff = worst + (best - worst) * ratio.
+        # This keeps results in the top (1 - ratio) fraction of the score range.
+        visual_keys = [k for k in raw_scores if not k.endswith(META_SUFFIX)]
+        cutoff = 0.0
+        if score_ratio > 0.0 and visual_keys and fused:
+            per_image_max = np.array([
+                max(float(raw_scores[k][idx]) for k in visual_keys)
+                for idx, _ in fused
+            ])
+            best_visual = float(per_image_max.max())
+            worst_visual = float(per_image_max.min())
+            cutoff = worst_visual + (best_visual - worst_visual) * score_ratio
+
         results = []
         coords_batch = []
         coord_result_indices = []
 
         for i, (idx, fused_score) in enumerate(fused):
+            if cutoff > 0.0:
+                max_visual = max(float(raw_scores[k][idx]) for k in visual_keys)
+                if max_visual < cutoff:
+                    continue
+
             record = images[idx]
             per_model = {}
             for mn, scores_arr in raw_scores.items():
@@ -797,7 +863,7 @@ class PhotoIndex:
 
             if record.latitude is not None and record.longitude is not None:
                 coords_batch.append((record.latitude, record.longitude))
-                coord_result_indices.append(i)
+                coord_result_indices.append(len(results) - 1)
 
         if coords_batch:
             locations = _batch_reverse_geocode(coords_batch)
@@ -811,18 +877,18 @@ class PhotoIndex:
         results: list[SearchResult],
         year_from: int,
         year_to: int,
-        top_k: int,
+        top_k: int | None = None,
     ) -> list[SearchResult]:
         filtered = []
         for r in results:
             y = _year_from_date_taken(r.date_taken)
             if y is not None and year_from <= y <= year_to:
                 filtered.append(r)
-                if len(filtered) >= top_k:
+                if top_k and len(filtered) >= top_k:
                     break
         return filtered
 
-    def search_progressive(self, query: str, top_k: int = 10):
+    def search_progressive(self, query: str, top_k: int | None = None, score_ratio: float | None = None):
         """Generator yielding result lists as each ranking signal completes.
 
         Yields after the first model scores (fast initial results), then
@@ -835,7 +901,7 @@ class PhotoIndex:
         # Use the full query for keyword/annotation matching, cleaned for embeddings
         embedding_query = visual_query if has_date_filter else query
         # Fetch more candidates when filtering so we don't end up with too few
-        fetch_k = top_k * 4 if has_date_filter else top_k
+        fetch_k = top_k * 4 if (has_date_filter and top_k) else top_k
 
         images = list(self._state.images)
         embeddings = {k: v for k, v in self._embeddings.items()}
@@ -876,7 +942,8 @@ class PhotoIndex:
 
             # Yield after first model for instant response
             if i == 0 and rankings:
-                results = self._build_results(rankings, raw_scores, images, annotations, n, fetch_k)
+                ratio = score_ratio if score_ratio is not None else SEARCH_SCORE_RATIO
+                results = self._build_results(rankings, raw_scores, images, annotations, n, fetch_k, score_ratio=ratio)
                 if has_date_filter:
                     results = self._filter_by_date(results, year_from, year_to, top_k)
                 yield results
@@ -891,18 +958,19 @@ class PhotoIndex:
             rankings["metadata_keywords"] = meta_kw_ranking
 
         if rankings:
-            results = self._build_results(rankings, raw_scores, images, annotations, n, fetch_k)
+            ratio = score_ratio if score_ratio is not None else SEARCH_SCORE_RATIO
+            results = self._build_results(rankings, raw_scores, images, annotations, n, fetch_k, score_ratio=ratio)
             if has_date_filter:
                 results = self._filter_by_date(results, year_from, year_to, top_k)
             yield results
 
-    def search(self, query: str, top_k: int = 10) -> list[SearchResult]:
+    def search(self, query: str, top_k: int | None = None, score_ratio: float | None = None) -> list[SearchResult]:
         results: list[SearchResult] = []
-        for batch in self.search_progressive(query, top_k):
+        for batch in self.search_progressive(query, top_k, score_ratio=score_ratio):
             results = batch
         return results
 
-    def find_similar(self, path: str, top_k: int = 20) -> list[SearchResult]:
+    def find_similar(self, path: str, top_k: int | None = None, score_ratio: float | None = None) -> list[SearchResult]:
         """Find images visually similar to the given image.
 
         Looks up the image's pre-computed embeddings and computes cosine
@@ -938,7 +1006,8 @@ class PhotoIndex:
         if not rankings:
             return []
 
-        return self._build_results(rankings, raw_scores, images, annotations, n, top_k)
+        ratio = score_ratio if score_ratio is not None else SEARCH_SCORE_RATIO
+        return self._build_results(rankings, raw_scores, images, annotations, n, top_k, score_ratio=ratio)
 
     # -- prune / reindex --
 
@@ -1069,6 +1138,7 @@ class PhotoIndex:
                     scanned_raw = []
                 else:
                     records_raw = raw.get("records", [])
+                    # Backward compat: old faces.json may contain "scanned"
                     scanned_raw = raw.get("scanned", [])
                 self._face_records = [
                     FaceRecord(
@@ -1080,11 +1150,24 @@ class PhotoIndex:
                     )
                     for r in records_raw
                 ]
-                self._face_scanned_paths = set(scanned_raw)
+                if scanned_raw:
+                    self._face_scanned_paths.update(scanned_raw)
             except (json.JSONDecodeError, ValueError, TypeError):
                 logger.warning("Corrupt faces.json -- starting with empty face index")
                 self._face_records = []
                 self._face_scanned_paths = set()
+
+        # Load scanned paths from dedicated file
+        scanned_file = self._faces_scanned_path()
+        if scanned_file.exists():
+            try:
+                text = scanned_file.read_text()
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line:
+                        self._face_scanned_paths.add(line)
+            except OSError:
+                logger.debug("Failed to read faces_scanned.txt")
 
         n = len(self._face_records)
         npy = self._face_embeddings_path()
@@ -1096,14 +1179,27 @@ class PhotoIndex:
 
         self._rebuild_face_lookups()
 
+    @staticmethod
+    def _face_record_to_dict(rec) -> dict:
+        d = asdict(rec)
+        d["bbox"] = tuple(float(v) for v in d["bbox"])
+        d["confidence"] = float(d["confidence"])
+        return d
+
+    def _faces_scanned_path(self) -> Path:
+        return self._cache_dir / FACES_SCANNED_FILE.name
+
     def _save_faces(self) -> None:
         data = {
-            "records": [asdict(r) for r in self._face_records],
-            "scanned": sorted(self._face_scanned_paths),
+            "records": [self._face_record_to_dict(r) for r in self._face_records],
         }
         self._atomic_write_text(self._faces_path(), json.dumps(data))
         if self._face_embeddings is not None:
             self._atomic_write_npy(self._face_embeddings_path(), self._face_embeddings)
+        self._atomic_write_text(
+            self._faces_scanned_path(),
+            "\n".join(sorted(self._face_scanned_paths)) + "\n" if self._face_scanned_paths else "",
+        )
 
     def _rebuild_face_lookups(self) -> None:
         self._faces_by_image = {}
@@ -1121,39 +1217,43 @@ class PhotoIndex:
         return self._face_engine
 
     def _prefilter_people(
-        self, candidates: list[tuple[int, "ImageRecord"]], threshold: float = 0.22
+        self, candidates: list[tuple[int, "ImageRecord"]], threshold: float = 0.105
     ) -> list[tuple[int, "ImageRecord"]]:
-        """Use CLIP/SigLIP embeddings to keep only images likely containing people.
+        """Use fused CLIP+SigLIP scores to keep images likely containing people.
 
-        Encodes "a photo of a person" with the first text-capable model and
-        scores all candidate images. Returns only those above the threshold.
-        This is a pure numpy operation on pre-computed embeddings — milliseconds.
+        Averages cosine similarity to "a photo of a person" across all
+        text-capable models. Pure numpy on pre-computed embeddings — milliseconds.
         """
         text_models = self._text_capable_models()
         if not text_models:
-            return candidates  # no text model available, skip filtering
-
-        model_name = text_models[0]
-        emb_matrix = self._embeddings.get(model_name)
-        if emb_matrix is None:
             return candidates
-
-        encoder = self._ensure_text_encoder(model_name)
-        query_vec = encoder.encode_text("a photo of a person's face")
 
         n = len(self._state.images)
-        if len(emb_matrix) < n:
-            return candidates
+        query = "a photo of a person"
+        fused = np.zeros(n, dtype=np.float32)
+        n_models = 0
 
-        scores = emb_matrix[:n] @ query_vec
+        for model_name in text_models:
+            emb_matrix = self._embeddings.get(model_name)
+            if emb_matrix is None or len(emb_matrix) < n:
+                continue
+            encoder = self._ensure_text_encoder(model_name)
+            query_vec = encoder.encode_text(query)
+            fused += emb_matrix[:n] @ query_vec
+            n_models += 1
+
+        if n_models == 0:
+            return candidates
+        fused /= n_models
+
         kept = []
         for global_idx, image_rec in candidates:
-            if scores[global_idx] >= threshold:
+            if fused[global_idx] >= threshold:
                 kept.append((global_idx, image_rec))
 
         logger.info(
-            "Face pre-filter: %d/%d candidates likely contain people (threshold=%.2f)",
-            len(kept), len(candidates), threshold,
+            "Face pre-filter: %d/%d candidates likely contain people (threshold=%.2f, models=%d)",
+            len(kept), len(candidates), threshold, n_models,
         )
         return kept
 
@@ -1162,11 +1262,17 @@ class PhotoIndex:
 
         Uses CLIP embeddings to pre-filter images likely containing people
         before running the heavier face detection model.
+
+        Memory strategy: pre-allocate an embedding buffer sized for the
+        expected faces.  Each new embedding is written directly into the
+        buffer (O(1) per face, zero copies).  A single save happens at
+        the end -- no intermediate full-file rewrites.
         """
         faces_before = len(self._face_records)
+        already_scanned = self._face_scanned_paths | set(self._faces_by_image)
         all_pending = [
             (i, r) for i, r in enumerate(self._state.images)
-            if r.path not in self._face_scanned_paths
+            if r.path not in already_scanned
         ]
 
         if not all_pending:
@@ -1181,21 +1287,26 @@ class PhotoIndex:
         candidates = self._prefilter_people(all_pending)
         skipped = len(all_pending) - len(candidates)
 
-        # Mark skipped images as scanned (no faces)
-        candidate_paths = {r.path for _, r in candidates}
-        for _, image_rec in all_pending:
-            if image_rec.path not in candidate_paths:
-                self._face_scanned_paths.add(image_rec.path)
-        if skipped:
-            self._save_faces()
+        # Pre-allocate embedding buffer: existing faces + ~2 per candidate
+        existing_count = len(self._face_records)
+        estimated_new = max(len(candidates) * 2, 64)
+        capacity = existing_count + estimated_new
+        buffer = np.empty((capacity, 512), dtype=np.float32)
+        if self._face_embeddings is not None:
+            buffer[:existing_count] = self._face_embeddings
+        write_pos = existing_count
+
+        # Point live queries at the buffer view
+        self._face_embeddings = buffer[:write_pos]
 
         engine = self._ensure_face_engine()
-        new_records: list[FaceRecord] = []
-        new_embeddings: list[np.ndarray] = []
+        t0 = time.time()
 
         for i, (global_idx, image_rec) in enumerate(candidates):
             if progress_callback:
-                progress_callback(i, len(candidates))
+                elapsed = time.time() - t0
+                rate = f"{(i + 1) / elapsed:.1f} faces/sec" if elapsed > 0 else ""
+                progress_callback(i + 1, len(candidates), rate)
 
             # Use preview thumbnail for speed (800px, already generated)
             thumb_path = str(
@@ -1210,27 +1321,34 @@ class PhotoIndex:
                 results = engine.detect_and_embed(source)
                 for face_rec, emb in results:
                     face_rec.image_path = image_rec.path
-                    new_records.append(face_rec)
-                    new_embeddings.append(emb)
+                    self._face_records.append(face_rec)
+
+                    # Grow buffer if needed (doubling strategy)
+                    if write_pos >= capacity:
+                        capacity *= 2
+                        new_buf = np.empty((capacity, 512), dtype=np.float32)
+                        new_buf[:write_pos] = buffer[:write_pos]
+                        buffer = new_buf
+
+                    buffer[write_pos] = emb.astype(np.float32)
+                    write_pos += 1
+
+                    # Update in-memory lookups incrementally
+                    idx = len(self._face_records) - 1
+                    self._faces_by_image.setdefault(face_rec.image_path, []).append(idx)
+                    if face_rec.label:
+                        self._faces_by_label.setdefault(face_rec.label, []).append(idx)
+
+                    # Keep live query view current
+                    self._face_embeddings = buffer[:write_pos]
             except Exception:
                 logger.debug("Face detection failed: %s", image_rec.path, exc_info=True)
 
             self._face_scanned_paths.add(image_rec.path)
 
-            # Checkpoint periodically
-            if (i + 1) % 100 == 0:
-                if new_records:
-                    self._append_face_data(new_records, new_embeddings)
-                    new_records = []
-                    new_embeddings = []
-                else:
-                    self._save_faces()
-
-        # Final save
-        if new_records:
-            self._append_face_data(new_records, new_embeddings)
-        else:
-            self._save_faces()
+        # Final: trim buffer to actual size and save once
+        self._face_embeddings = buffer[:write_pos].copy()
+        self._save_faces()
 
         return {
             "new_faces": len(self._face_records) - faces_before,
@@ -1238,18 +1356,6 @@ class PhotoIndex:
             "images_skipped": skipped,
             "total_faces": len(self._face_records),
         }
-
-    def _append_face_data(
-        self, records: list[FaceRecord], embeddings: list[np.ndarray]
-    ) -> None:
-        self._face_records.extend(records)
-        new_emb = np.vstack(embeddings).astype(np.float32)
-        if self._face_embeddings is not None:
-            self._face_embeddings = np.vstack([self._face_embeddings, new_emb])
-        else:
-            self._face_embeddings = new_emb
-        self._rebuild_face_lookups()
-        self._save_faces()
 
     def get_faces(self, path: str) -> list[dict]:
         """Return face records for a given image."""
@@ -1272,7 +1378,7 @@ class PhotoIndex:
         return f"Face {face_idx} not found in {Path(resolved).name}"
 
     def find_person(
-        self, path: str, face_idx: int = 0, top_k: int = 50
+        self, path: str, face_idx: int = 0, top_k: int | None = None
     ) -> list[SearchResult]:
         """Find images containing the same person as a given face.
 
@@ -1344,7 +1450,7 @@ class PhotoIndex:
                 coords_batch.append((image_rec.latitude, image_rec.longitude))
                 coord_indices.append(ri)
 
-            if len(results) >= top_k:
+            if top_k and len(results) >= top_k:
                 break
 
         if coords_batch:

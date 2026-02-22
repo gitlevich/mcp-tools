@@ -258,7 +258,7 @@ def test_search_returns_results(_dev, tmp_path, monkeypatch):
     index.add_folder(str(photos_dir))
     index.refresh()
 
-    results = index.search("a red photo", top_k=3)
+    results = index.search("a red photo", top_k=3, score_ratio=0.0)
     assert len(results) == 3
     assert all(r.path for r in results)
     assert all(r.score > 0 for r in results)
@@ -268,6 +268,45 @@ def test_search_returns_results(_dev, tmp_path, monkeypatch):
 def test_search_empty_index(_dev, tmp_path, monkeypatch):
     index = _make_index(tmp_path, monkeypatch)
     assert index.search("anything") == []
+
+
+# -- find similar --
+
+@patch("indexer.get_device", return_value="cpu")
+def test_find_similar_returns_results(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    paths = _make_photos(photos_dir, 5)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    results = index.find_similar(str(paths[0]), top_k=3, score_ratio=0.0)
+    assert len(results) == 3
+    # Query image must be excluded from results
+    query_path = str(paths[0].resolve())
+    assert all(r.path != query_path for r in results)
+    assert all(r.score > 0 for r in results)
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_find_similar_unknown_image(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 3)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    assert index.find_similar("/nonexistent/photo.jpg") == []
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_find_similar_empty_index(_dev, tmp_path, monkeypatch):
+    index = _make_index(tmp_path, monkeypatch)
+    assert index.find_similar("/any/path.jpg") == []
 
 
 # -- annotations --
@@ -331,7 +370,7 @@ def test_search_boosts_annotated(_dev, tmp_path, monkeypatch):
     target = str(paths[2].resolve())
     index.annotate(str(paths[2]), "red vintage car")
 
-    results = index.search("red vintage car", top_k=5)
+    results = index.search("red vintage car", top_k=5, score_ratio=0.0)
     assert results[0].path == target
 
 
@@ -495,7 +534,7 @@ def test_meta_embeddings_in_search(_dev, tmp_path, monkeypatch):
     index.add_folder(str(photos_dir))
     index.refresh()
 
-    results = index.search("test query", top_k=3)
+    results = index.search("test query", top_k=3, score_ratio=0.0)
     assert len(results) == 3
     # Each result should have model scores for both visual and meta
     for r in results:
@@ -520,7 +559,7 @@ def test_search_progressive_yields_phases(_dev, tmp_path, monkeypatch):
     index.add_folder(str(photos_dir))
     index.refresh()
 
-    phases = list(index.search_progressive("sunset", top_k=3))
+    phases = list(index.search_progressive("sunset", top_k=3, score_ratio=0.0))
     assert len(phases) == 2
     # Both phases return result lists
     assert len(phases[0]) == 3
@@ -542,7 +581,7 @@ def test_search_progressive_single_model(_dev, tmp_path, monkeypatch):
     index.add_folder(str(photos_dir))
     index.refresh()
 
-    phases = list(index.search_progressive("test", top_k=3))
+    phases = list(index.search_progressive("test", top_k=3, score_ratio=0.0))
     assert len(phases) == 2
     assert len(phases[-1]) == 3
 
@@ -567,9 +606,9 @@ def test_search_progressive_matches_search(_dev, tmp_path, monkeypatch):
 
     # Fix random seed so both calls produce same results
     np.random.seed(42)
-    regular = index.search("beach", top_k=5)
+    regular = index.search("beach", top_k=5, score_ratio=0.0)
     np.random.seed(42)
-    phases = list(index.search_progressive("beach", top_k=5))
+    phases = list(index.search_progressive("beach", top_k=5, score_ratio=0.0))
     final = phases[-1]
 
     assert len(regular) == len(final)
@@ -677,8 +716,87 @@ def test_search_results_include_location(_dev, tmp_path, monkeypatch):
     index._state.images[0].latitude = 48.8566
     index._state.images[0].longitude = 2.3522
 
-    results = index.search("test", top_k=2)
+    results = index.search("test", top_k=2, score_ratio=0.0)
     paris_result = [r for r in results if "Paris" in r.location]
     assert len(paris_result) == 1
     no_loc_result = [r for r in results if r.location == ""]
     assert len(no_loc_result) == 1
+
+
+# -- score_ratio threshold --
+
+@patch("indexer.get_device", return_value="cpu")
+def test_score_ratio_filters_low_scoring_results(_dev, tmp_path, monkeypatch):
+    """Results whose max visual cosine similarity falls below the ratio cutoff are excluded."""
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 5)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    # Build controlled embeddings: first 2 images aligned with query, rest nearly orthogonal.
+    # query = [1, 0, 0, 0]
+    # aligned images -> cosine ~ 1.0
+    # orthogonal images -> cosine ~ 0.0
+    dim = 4
+    query_vec = np.array([1, 0, 0, 0], dtype=np.float32)
+    aligned = np.array([1, 0, 0, 0], dtype=np.float32)
+    orthogonal = np.array([0, 0, 0, 1], dtype=np.float32)
+    emb = np.vstack([aligned, aligned, orthogonal, orthogonal, orthogonal]).astype(np.float32)
+    index._embeddings["mock-model"] = emb
+    # Zero out meta embeddings so they don't interfere
+    index._meta_embeddings["mock-model"] = np.zeros((5, dim), dtype=np.float32)
+
+    # Mock text encoder to return our fixed query vector
+    mock_encoder = MagicMock()
+    mock_encoder.encode_text.return_value = query_vec
+    monkeypatch.setattr(index, "_ensure_text_encoder", lambda _model: mock_encoder)
+
+    # With ratio=0.6: cutoff = 1.0 * 0.6 = 0.6. Only the 2 aligned images (score 1.0) pass.
+    results = index.search("test query", score_ratio=0.6)
+    assert len(results) == 2
+
+    # With ratio=0.0: no filtering, all 5 returned.
+    results_all = index.search("test query", score_ratio=0.0)
+    assert len(results_all) == 5
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_score_ratio_defaults_to_config_value(_dev, tmp_path, monkeypatch):
+    """When score_ratio is not passed, the SEARCH_SCORE_RATIO config is used."""
+    import config
+    index = _make_index(tmp_path, monkeypatch)
+
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
+    _make_photos(photos_dir, 4)
+    index.add_folder(str(photos_dir))
+    index.refresh()
+
+    dim = 4
+    query_vec = np.array([1, 0, 0, 0], dtype=np.float32)
+    # Image 0: score 1.0, Image 1: score 0.7, Image 2: score 0.3, Image 3: score 0.0
+    emb = np.array([
+        [1, 0, 0, 0],
+        [0.7, 0.71414, 0, 0],  # cosine ~ 0.7
+        [0.3, 0.9539, 0, 0],   # cosine ~ 0.3
+        [0, 0, 0, 1],           # cosine ~ 0.0
+    ], dtype=np.float32)
+    # Normalize to unit vectors
+    emb = emb / np.linalg.norm(emb, axis=1, keepdims=True)
+    index._embeddings["mock-model"] = emb
+    index._meta_embeddings["mock-model"] = np.zeros((4, dim), dtype=np.float32)
+
+    mock_encoder = MagicMock()
+    mock_encoder.encode_text.return_value = query_vec
+    monkeypatch.setattr(index, "_ensure_text_encoder", lambda _model: mock_encoder)
+
+    # Best visual score will be ~1.0. With config ratio 0.6 -> cutoff ~0.6.
+    # Image 0 (1.0) and Image 1 (~0.7) pass. Image 2 (~0.3) and 3 (~0.0) don't.
+    monkeypatch.setattr(config, "SEARCH_SCORE_RATIO", 0.6)
+    import indexer
+    monkeypatch.setattr(indexer, "SEARCH_SCORE_RATIO", 0.6)
+    results = index.search("test query")
+    assert len(results) == 2

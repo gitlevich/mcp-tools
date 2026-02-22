@@ -8,10 +8,11 @@ dependencies = [
     "chromadb>=0.5.0",
     "sentence-transformers>=3.0.0",
     "torch>=2.1.0",
+    "spacy>=3.7.0",
 ]
 
 [tool.setuptools]
-py-modules = ["config", "chunker", "embedder", "indexer", "sources", "picker", "server"]
+py-modules = ["config", "chunker", "embedder", "entities", "indexer", "ner", "sources", "picker", "server"]
 
 [project.optional-dependencies]
 dev = [

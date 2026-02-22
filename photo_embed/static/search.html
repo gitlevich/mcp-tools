@@ -116,6 +116,25 @@
   .search-opts-popup input#optNotes {
     accent-color: var(--green);
   }
+  .search-opts-popup .threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text);
+    padding: 0.3rem 0 0.1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0.3rem;
+  }
+  .search-opts-popup .threshold-row input[type="range"] {
+    width: 80px;
+    accent-color: var(--blue);
+  }
+  .search-opts-popup .threshold-val {
+    min-width: 2rem;
+    text-align: right;
+    color: var(--text-dim);
+  }
   .search-meta {
     font-size: 0.8rem;
     color: var(--text-dim);
@@ -715,6 +734,153 @@
     font-style: italic;
   }
 
+  /* Entity panel */
+  .entity-panel {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: rgba(0, 0, 0, 0.85);
+  }
+  .entity-panel.open { display: flex; justify-content: center; align-items: flex-start; padding-top: 3rem; }
+  .entity-panel-inner {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .entity-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .entity-panel-header h2 { font-size: 1rem; font-weight: 600; flex: 1; }
+  .entity-search-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+    outline: none;
+  }
+  .entity-search-input:focus { border-color: var(--blue); }
+  .entity-type-filter {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0.3rem 0.4rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+  }
+  .entity-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0 0.3rem;
+  }
+  .entity-close:hover { color: var(--text); }
+  .entity-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0.5rem;
+  }
+  .entity-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .entity-item:hover { background: var(--bg); }
+  .entity-item.selected { background: #1f3a5f; }
+  .entity-item .entity-name { flex: 1; font-weight: 500; }
+  .entity-item .entity-type {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .entity-type.person { background: #1a3a2a; color: var(--green); }
+  .entity-type.place { background: #3a2a1a; color: var(--amber); }
+  .entity-type.org { background: #1a2a3a; color: var(--blue); }
+  .entity-item .entity-count { color: var(--text-dim); font-size: 0.75rem; }
+  .entity-item .entity-aliases { color: var(--text-dim); font-size: 0.7rem; font-style: italic; }
+  .entity-item input[type="checkbox"] { margin-right: 0.2rem; }
+  .entity-detail {
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 1rem;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  .entity-detail-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .entity-detail-header h3 { font-size: 0.95rem; font-weight: 600; }
+  .entity-detail-actions { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; }
+  .entity-detail-actions button {
+    background: transparent;
+    color: var(--blue);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .entity-detail-actions button:hover { border-color: var(--blue); }
+  .entity-detail-actions button.danger { color: #f85149; }
+  .entity-detail-actions button.danger:hover { border-color: #f85149; }
+  .entity-mention {
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+  .entity-mention:last-child { border-bottom: none; }
+  .entity-mention-path { color: var(--blue); font-size: 0.75rem; }
+  .entity-mention-context { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.15rem; }
+  .entity-merge-bar {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 0.8rem;
+  }
+  .entity-merge-bar.active { display: flex; }
+  .entity-merge-bar button {
+    background: var(--blue);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .entity-stats-bar {
+    display: flex;
+    gap: 1rem;
+    padding: 0.4rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
   /* Lightbox */
   .lightbox {
     display: none;
@@ -1024,6 +1190,12 @@
     <div class="search-opts-popup" id="searchOptsPopup">
       <label><input type="checkbox" id="optPhotos" checked> Photos</label>
       <label><input type="checkbox" id="optNotes" checked> Notes</label>
+      <div class="threshold-row">
+        <span>Threshold</span>
+        <input type="range" id="scoreThreshold" min="0" max="100" step="5" value="60"
+               oninput="document.getElementById('thresholdVal').textContent = this.value + '%'; localStorage.setItem('scoreThreshold', this.value)">
+        <span class="threshold-val" id="thresholdVal">60%</span>
+      </div>
     </div>
   </div>
   <span class="search-meta" id="searchMeta"></span>
@@ -1064,6 +1236,30 @@
   </div>
 </div>
 
+<div class="entity-panel" id="entityPanel" onclick="closeEntityPanel(event)">
+  <div class="entity-panel-inner" onclick="event.stopPropagation()">
+    <div class="entity-panel-header">
+      <h2>Entities</h2>
+      <input class="entity-search-input" id="entitySearchInput" type="text" placeholder="Search entities..." oninput="entitySearchDebounce()">
+      <select class="entity-type-filter" id="entityTypeFilter" onchange="loadEntities()">
+        <option value="">All types</option>
+        <option value="person">People</option>
+        <option value="place">Places</option>
+        <option value="org">Organizations</option>
+      </select>
+      <button class="entity-close" onclick="closeEntityPanel()">&times;</button>
+    </div>
+    <div class="entity-stats-bar" id="entityStatsBar"></div>
+    <div class="entity-list" id="entityList"></div>
+    <div class="entity-detail" id="entityDetail" style="display:none"></div>
+    <div class="entity-merge-bar" id="entityMergeBar">
+      <span id="entityMergeInfo">Select 2 entities to merge</span>
+      <button onclick="doMergeEntities()">Merge selected</button>
+      <button onclick="cancelEntityMerge()" style="background:transparent;color:var(--text-dim);border:1px solid var(--border);">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="status-panel collapsed" id="statusPanel">
   <div class="status-toggle" onclick="togglePanel()">
     <span class="arrow">&#9660;</span>
@@ -1072,12 +1268,14 @@
   </div>
   <div class="status-body">
     <span><span class="stat-label">Images: </span><span class="stat-value" id="statImages">--</span></span>
+    <span id="statFacesWrap"><span class="stat-label">Faces: </span><span class="stat-value" id="statFaces">--</span></span>
     <span id="statChunksWrap"><span class="stat-label">Notes: </span><span class="stat-value" id="statChunks">--</span></span>
     <span><span class="stat-label">Models: </span><span class="stat-value" id="statModels">--</span></span>
-    <span><span class="stat-label">Cache: </span><span class="stat-value" id="statCache">--</span></span>
+    <span id="statCacheWrap"><span class="stat-label">Cache: </span><span class="stat-value" id="statCache">--</span></span>
     <span class="status-folders" id="statFolders"></span>
     <span class="status-activity" id="statActivity"></span>
     <button class="refresh-btn" id="addFolderBtn" onclick="doPickFolder()">Add Folder</button>
+    <button class="refresh-btn" id="entitiesBtn" onclick="openEntityPanel()">Entities</button>
     <button class="refresh-btn" id="refreshBtn" onclick="doRefresh()">Refresh</button>
   </div>
 </div>
@@ -1140,6 +1338,15 @@ function saveNotesPref(on) {
 }
 
 optNotes.checked = loadNotesPref();
+
+// Restore threshold slider from localStorage
+{
+  const saved = localStorage.getItem('scoreThreshold');
+  if (saved !== null) {
+    document.getElementById('scoreThreshold').value = saved;
+    document.getElementById('thresholdVal').textContent = saved + '%';
+  }
+}
 
 function notesEnabled() { return optNotes.checked; }
 
@@ -1524,7 +1731,7 @@ function enterNoteFocus(note, cardEl) {
   const hdrs = { 'Content-Type': 'application/json' };
   fetch('/search-stream', {
     method: 'POST', headers: hdrs,
-    body: JSON.stringify({ query: note.text.trim(), top_k: 200 }),
+    body: JSON.stringify({ query: note.text.trim(), score_ratio: parseInt(document.getElementById('scoreThreshold').value, 10) / 100 }),
   }).then(async resp => {
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -1638,7 +1845,7 @@ async function doSearch() {
   try {
     const resp = await fetch('/search-stream', {
       method: 'POST', headers: hdrs,
-      body: JSON.stringify({ query, top_k: 200 }),
+      body: JSON.stringify({ query, score_ratio: parseInt(document.getElementById('scoreThreshold').value, 10) / 100 }),
     });
 
     const reader = resp.body.getReader();
@@ -2053,7 +2260,7 @@ async function doFindSimilar(path, thumbSrc) {
     const resp = await fetch('/find-similar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, top_k: 200 }),
+      body: JSON.stringify({ path, score_ratio: parseInt(document.getElementById('scoreThreshold').value, 10) / 100 }),
     });
     const data = await resp.json();
     _allResults = data;
@@ -2285,7 +2492,6 @@ async function doFindPerson() {
       body: JSON.stringify({
         path: result.path,
         face_idx: face.face_idx,
-        top_k: 200,
       }),
     });
     const data = await resp.json();
@@ -2501,6 +2707,7 @@ const statImages = document.getElementById('statImages');
 const statChunks = document.getElementById('statChunks');
 const statModels = document.getElementById('statModels');
 const statFolders = document.getElementById('statFolders');
+const statFaces = document.getElementById('statFaces');
 const statCache = document.getElementById('statCache');
 const statActivity = document.getElementById('statActivity');
 const refreshBtn = document.getElementById('refreshBtn');
@@ -2537,9 +2744,12 @@ async function pollStatus() {
     const folders = (s.folders || []).map(folderName);
     if (s.photos_library) folders.push('Photos Library');
 
+    const faces = s.total_faces || 0;
     statImages.textContent = n.toLocaleString();
+    statFaces.textContent = faces.toLocaleString();
+    document.getElementById('statFacesWrap').style.display = faces > 0 ? '' : 'none';
     statCache.textContent = s.cache_size_bytes != null ? formatBytes(s.cache_size_bytes) : '--';
-    if (s.cache_dir) statCache.title = s.cache_dir;
+    if (s.cache_dir) document.getElementById('statCacheWrap').title = s.cache_dir;
     statModels.textContent = models || '--';
     const fullPaths = [...(s.folders || [])];
     if (s.photos_library) fullPaths.push(s.photos_library);
@@ -2567,7 +2777,9 @@ async function pollStatus() {
       statusSummary.textContent = `${n.toLocaleString()} images — refreshing...`;
     } else {
       statusDot.classList.remove('busy');
-      statusSummary.textContent = `${n.toLocaleString()} images`;
+      statusSummary.textContent = faces > 0
+        ? `${n.toLocaleString()} images, ${faces.toLocaleString()} faces`
+        : `${n.toLocaleString()} images`;
       statActivity.textContent = '';
       refreshBtn.disabled = false;
       refreshBtn.textContent = 'Refresh';
@@ -2645,6 +2857,256 @@ async function doRefresh() {
 applyNotesVisibility();
 pollStatus();
 setInterval(pollStatus, 5000);
+
+// ---- Entity Panel ----
+
+let _entitySearchTimer = null;
+let _entityMergeSet = new Set();
+let _entityData = [];
+let _selectedEntityId = null;
+let _mergeMode = false;
+
+function openEntityPanel() {
+  document.getElementById('entityPanel').classList.add('open');
+  loadEntityStats();
+  loadEntities();
+}
+
+function closeEntityPanel(e) {
+  if (e && e.target !== document.getElementById('entityPanel')) return;
+  document.getElementById('entityPanel').classList.remove('open');
+  cancelEntityMerge();
+  _selectedEntityId = null;
+  document.getElementById('entityDetail').style.display = 'none';
+}
+
+function entitySearchDebounce() {
+  clearTimeout(_entitySearchTimer);
+  _entitySearchTimer = setTimeout(loadEntities, 300);
+}
+
+async function loadEntityStats() {
+  try {
+    const resp = await fetch('/entity-stats');
+    const s = await resp.json();
+    const bar = document.getElementById('entityStatsBar');
+    const parts = [];
+    if (s.total_entities) parts.push(`${s.total_entities} entities`);
+    if (s.total_mentions) parts.push(`${s.total_mentions} mentions`);
+    const byType = s.by_type || {};
+    for (const [t, c] of Object.entries(byType)) {
+      parts.push(`${c} ${t}s`);
+    }
+    bar.textContent = parts.join(' \u00b7 ') || 'No entities yet. Run Refresh to extract.';
+  } catch {
+    document.getElementById('entityStatsBar').textContent = 'Stats unavailable';
+  }
+}
+
+async function loadEntities() {
+  const query = document.getElementById('entitySearchInput').value.trim();
+  const type = document.getElementById('entityTypeFilter').value;
+  const listEl = document.getElementById('entityList');
+
+  try {
+    let entities;
+    if (query) {
+      const resp = await fetch('/search-entities', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query, type: type || undefined, limit: 100}),
+      });
+      entities = await resp.json();
+    } else {
+      const params = new URLSearchParams();
+      if (type) params.set('type', type);
+      params.set('limit', '100');
+      const resp = await fetch('/entities?' + params);
+      entities = await resp.json();
+    }
+    _entityData = entities;
+    renderEntityList(entities);
+  } catch {
+    listEl.innerHTML = '<div style="padding:1rem;color:var(--text-dim)">Failed to load entities</div>';
+  }
+}
+
+function renderEntityList(entities) {
+  const listEl = document.getElementById('entityList');
+  if (!entities.length) {
+    listEl.innerHTML = '<div style="padding:1rem;color:var(--text-dim)">No entities found</div>';
+    return;
+  }
+  listEl.innerHTML = entities.map(e => {
+    const selected = _selectedEntityId === e.id ? ' selected' : '';
+    const checked = _entityMergeSet.has(e.id) ? ' checked' : '';
+    const checkbox = _mergeMode
+      ? `<input type="checkbox" ${checked} onclick="event.stopPropagation(); toggleMergeSelect(${e.id})">`
+      : '';
+    const aliases = (e.aliases && e.aliases.length)
+      ? `<span class="entity-aliases">${escapeHtml(e.aliases.join(', '))}</span>`
+      : '';
+    return `<div class="entity-item${selected}" onclick="selectEntity(${e.id})">
+      ${checkbox}
+      <span class="entity-name">${escapeHtml(e.canonical_name)}</span>
+      ${aliases}
+      <span class="entity-type ${e.type}">${e.type}</span>
+      <span class="entity-count">${e.mention_count}</span>
+    </div>`;
+  }).join('');
+}
+
+async function selectEntity(id) {
+  _selectedEntityId = id;
+  renderEntityList(_entityData);
+  const detailEl = document.getElementById('entityDetail');
+  detailEl.style.display = '';
+  detailEl.innerHTML = '<div style="padding:0.5rem;color:var(--text-dim)">Loading...</div>';
+
+  try {
+    const resp = await fetch('/entity?id=' + id);
+    const e = await resp.json();
+    if (e.error) {
+      detailEl.innerHTML = `<div style="color:#f85149">${escapeHtml(e.error)}</div>`;
+      return;
+    }
+    const aliasText = (e.aliases && e.aliases.length)
+      ? `<div style="color:var(--text-dim);font-size:0.75rem;margin-bottom:0.4rem">aka: ${escapeHtml(e.aliases.join(', '))}</div>`
+      : '';
+    const mentions = (e.mentions || []).map(m => {
+      const path = m.rel_path || '';
+      const ctx = m.context ? escapeHtml(m.context).replace(
+        new RegExp('(' + escapeRegExp(m.span_text || e.canonical_name) + ')', 'gi'),
+        '<strong style="color:var(--text)">$1</strong>'
+      ) : '';
+      return `<div class="entity-mention">
+        <div class="entity-mention-path">${escapeHtml(path)}${m.start_line ? ':' + m.start_line : ''}</div>
+        ${ctx ? '<div class="entity-mention-context">' + ctx + '</div>' : ''}
+      </div>`;
+    }).join('');
+
+    detailEl.innerHTML = `
+      <div class="entity-detail-header">
+        <h3>${escapeHtml(e.canonical_name)}</h3>
+        <span class="entity-type ${e.type}">${e.type}</span>
+        <span style="color:var(--text-dim);font-size:0.75rem">${e.mention_count} mentions</span>
+      </div>
+      ${aliasText}
+      <div class="entity-detail-actions">
+        <button onclick="startRenameEntity(${e.id}, '${escapeHtml(e.canonical_name).replace(/'/g, "\\'")}')">Rename</button>
+        <button onclick="startMergeMode()">Merge</button>
+        <button class="danger" onclick="deleteEntity(${e.id}, '${escapeHtml(e.canonical_name).replace(/'/g, "\\'")}')">Delete</button>
+      </div>
+      ${mentions || '<div style="color:var(--text-dim);font-size:0.8rem">No mentions recorded</div>'}
+    `;
+  } catch {
+    detailEl.innerHTML = '<div style="color:#f85149">Failed to load entity</div>';
+  }
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function startRenameEntity(id, currentName) {
+  const newName = prompt('New name for "' + currentName + '":', currentName);
+  if (!newName || newName === currentName) return;
+  fetch('/rename-entity', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({entity_id: id, new_name: newName}),
+  }).then(r => r.json()).then(result => {
+    if (result.error) { alert(result.error); return; }
+    loadEntities();
+    loadEntityStats();
+    selectEntity(id);
+  });
+}
+
+async function deleteEntity(id, name) {
+  if (!confirm('Delete entity "' + name + '" and all its mentions?')) return;
+  await fetch('/delete-entity', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({entity_id: id}),
+  });
+  _selectedEntityId = null;
+  document.getElementById('entityDetail').style.display = 'none';
+  loadEntities();
+  loadEntityStats();
+}
+
+function startMergeMode() {
+  _mergeMode = true;
+  _entityMergeSet.clear();
+  if (_selectedEntityId) _entityMergeSet.add(_selectedEntityId);
+  updateMergeBar();
+  renderEntityList(_entityData);
+}
+
+function cancelEntityMerge() {
+  _mergeMode = false;
+  _entityMergeSet.clear();
+  document.getElementById('entityMergeBar').classList.remove('active');
+  renderEntityList(_entityData);
+}
+
+function toggleMergeSelect(id) {
+  if (_entityMergeSet.has(id)) {
+    _entityMergeSet.delete(id);
+  } else {
+    _entityMergeSet.add(id);
+  }
+  updateMergeBar();
+  renderEntityList(_entityData);
+}
+
+function updateMergeBar() {
+  const bar = document.getElementById('entityMergeBar');
+  const info = document.getElementById('entityMergeInfo');
+  if (!_mergeMode) { bar.classList.remove('active'); return; }
+  bar.classList.add('active');
+  const n = _entityMergeSet.size;
+  if (n < 2) {
+    info.textContent = `Select ${2 - n} more entity to merge`;
+  } else {
+    const names = _entityData
+      .filter(e => _entityMergeSet.has(e.id))
+      .map(e => e.canonical_name);
+    info.textContent = `Merge: ${names.join(' + ')}`;
+  }
+}
+
+async function doMergeEntities() {
+  if (_entityMergeSet.size !== 2) {
+    alert('Select exactly 2 entities to merge.');
+    return;
+  }
+  const ids = [..._entityMergeSet];
+  const entities = ids.map(id => _entityData.find(e => e.id === id)).filter(Boolean);
+  const keepIdx = confirm(
+    `Keep "${entities[0].canonical_name}" as the primary name?\n\nOK = keep "${entities[0].canonical_name}"\nCancel = keep "${entities[1].canonical_name}"`
+  ) ? 0 : 1;
+  const keepId = ids[keepIdx];
+  const mergeId = ids[1 - keepIdx];
+
+  try {
+    const resp = await fetch('/merge-entities', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({keep_id: keepId, merge_id: mergeId}),
+    });
+    const result = await resp.json();
+    if (result.error) { alert(result.error); return; }
+    cancelEntityMerge();
+    _selectedEntityId = keepId;
+    loadEntities();
+    loadEntityStats();
+    selectEntity(keepId);
+  } catch {
+    alert('Merge failed');
+  }
+}
 
 // Infinite scroll
 window.addEventListener('scroll', () => {

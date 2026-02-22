@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from indexer import CodeIndex, SearchResult
+from indexer import CodeIndex, SearchResult, rrf
 
 
 def _mock_openai_embeddings(texts: list[str]) -> list[list[float]]:
@@ -173,3 +173,97 @@ def test_status_after_index(tmp_path: Path):
     assert s["total_files"] == 2
     assert s["total_chunks"] >= 2
     assert s["pending_reindex"] == 0
+
+
+# -- RRF unit tests --
+
+
+def test_rrf_single_source():
+    rankings = {"vector": ["a", "b", "c"]}
+    result = rrf(rankings, {"vector": 1.0}, top_k=3)
+    ids = [cid for cid, _ in result]
+    assert ids == ["a", "b", "c"]
+
+
+def test_rrf_keyword_weight_promotes():
+    """Higher-weighted keyword source should promote its top result."""
+    rankings = {
+        "vector": ["a", "b", "c"],
+        "keyword": ["c", "b"],
+    }
+    result = rrf(rankings, {"vector": 1.0, "keyword": 3.0}, top_k=3)
+    ids = [cid for cid, _ in result]
+    assert ids[0] == "c"
+
+
+def test_rrf_empty():
+    assert rrf({}, {}, top_k=5) == []
+
+
+# -- FTS sync tests --
+
+
+def test_fts_populated_after_index(tmp_path: Path):
+    index = _make_index(tmp_path)
+    project = tmp_path / "project"
+
+    (project / "cities.py").write_text("Vancouver = 'a city in BC'")
+    index.refresh()
+
+    hits = index._fts_search("Vancouver", limit=5)
+    assert len(hits) > 0
+
+
+def test_fts_cleared_after_delete(tmp_path: Path):
+    index = _make_index(tmp_path)
+    project = tmp_path / "project"
+
+    f = project / "temp.py"
+    f.write_text("Vancouver = 'test'")
+    index.refresh()
+
+    assert len(index._fts_search("Vancouver", limit=5)) > 0
+
+    f.unlink()
+    index.refresh()
+
+    assert len(index._fts_search("Vancouver", limit=5)) == 0
+
+
+def test_fts_rebuilt_after_full_reindex(tmp_path: Path):
+    index = _make_index(tmp_path)
+    project = tmp_path / "project"
+
+    (project / "a.py").write_text("Vancouver = 1")
+    index.refresh()
+
+    (project / "a.py").write_text("Toronto = 2")
+    index.full_reindex()
+
+    assert len(index._fts_search("Vancouver", limit=5)) == 0
+    assert len(index._fts_search("Toronto", limit=5)) > 0
+
+
+# -- Hybrid search integration --
+
+
+def test_hybrid_search_boosts_keyword_match(tmp_path: Path):
+    """Chunk containing the literal query term should rank first."""
+    index = _make_index(tmp_path)
+    project = tmp_path / "project"
+
+    (project / "cities.py").write_text(
+        "# Cities\nVancouver = 'a beautiful city in British Columbia'\n"
+    )
+    (project / "nature.py").write_text(
+        "# Nature\nbeautiful_mountains = 'scenic views and forests'\n"
+    )
+    (project / "weather.py").write_text(
+        "# Weather\nrain = 'common in Pacific Northwest coastal areas'\n"
+    )
+
+    index.refresh()
+    results = index.search("Vancouver")
+
+    assert len(results) > 0
+    assert "Vancouver" in results[0].text

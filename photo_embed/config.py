@@ -33,13 +33,21 @@ NOTE_CHUNK_SIZE = 4000
 NOTE_CHUNK_OVERLAP = 800
 NOTE_MAX_PER_FILE = 2
 NOTES_METADATA_FILE = CACHE_DIR / "notes_metadata.json"
+ENTITIES_DB = CACHE_DIR / "entities.db"
 
 DEFAULT_MODELS = ["clip-vit-b-16", "siglip-vit-b-16"]
 
 # -- faces --
 
 FACES_FILE = CACHE_DIR / "faces.json"
+FACES_SCANNED_FILE = CACHE_DIR / "faces_scanned.txt"
 FACE_SIMILARITY_THRESHOLD = 0.55
+
+# -- search relevance --
+
+# Fraction of the best visual cosine similarity below which results are cut.
+# 0.6 means keep results scoring >= 60% of the top match. 0.0 disables filtering.
+SEARCH_SCORE_RATIO = 0.6
 
 # -- service daemon --
 

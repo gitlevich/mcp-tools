@@ -271,5 +271,116 @@ def find_person(path: str, face_idx: int = 0, top_k: int = 50) -> str:
     return client.find_person(path, face_idx, top_k)
 
 
+# -- entity resolution tools --
+
+
+@mcp.tool()
+def extract_entities() -> str:
+    """Run named entity recognition on all indexed note chunks.
+
+    Extracts people, places, and organizations using spaCy NER.
+    Incremental: skips chunks already processed since their last modification.
+    """
+    stats = client.extract_entities()
+    return (
+        f"Processed {stats['chunks_processed']} chunks "
+        f"(skipped {stats['chunks_skipped']}). "
+        f"Added {stats['mentions_added']} entity mentions."
+    )
+
+
+@mcp.tool()
+def search_entities(query: str, type: str = "") -> str:
+    """Find entities by name substring.
+
+    Searches canonical names and aliases. Returns matches with mention counts.
+
+    Args:
+        query: Name or partial name to search for (e.g. "Eric").
+        type: Optional filter: "person", "place", or "org".
+    """
+    results = client.search_entities(query, entity_type=type.strip() or None)
+    if not results:
+        return f"No entities matching '{query}'."
+    lines = []
+    for e in results:
+        aliases = f" (aka: {', '.join(e['aliases'])})" if e.get("aliases") else ""
+        lines.append(f"  [{e['id']}] {e['canonical_name']} ({e['type']}) - {e['mention_count']} mentions{aliases}")
+    return "Entities:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def get_entity(entity_id: int) -> str:
+    """Get detailed information about an entity.
+
+    Shows canonical name, type, aliases, and sample mentions with context.
+
+    Args:
+        entity_id: The entity ID (from search_entities or list_entities).
+    """
+    import json
+    return json.dumps(client.get_entity(entity_id), indent=2)
+
+
+@mcp.tool()
+def merge_entities(keep_id: int, merge_id: int) -> str:
+    """Merge two entities that refer to the same real-world thing.
+
+    All mentions and aliases from merge_id are moved to keep_id.
+    The merged entity is deleted.
+
+    Args:
+        keep_id: Entity ID to keep as the canonical entity.
+        merge_id: Entity ID to merge into the kept entity.
+    """
+    result = client.merge_entities(keep_id, merge_id)
+    if "error" in result:
+        return result["error"]
+    aliases = f" (aliases: {', '.join(result['aliases'])})" if result.get("aliases") else ""
+    return f"Merged into '{result['canonical_name']}'. Now has {result['mention_count']} mentions{aliases}."
+
+
+@mcp.tool()
+def rename_entity(entity_id: int, new_name: str) -> str:
+    """Rename an entity's canonical name. The old name becomes an alias.
+
+    Args:
+        entity_id: The entity ID to rename.
+        new_name: The new canonical name.
+    """
+    result = client.rename_entity(entity_id, new_name)
+    if "error" in result:
+        return result["error"]
+    aliases = f" (aliases: {', '.join(result['aliases'])})" if result.get("aliases") else ""
+    return f"Renamed to '{result['canonical_name']}'{aliases}."
+
+
+@mcp.tool()
+def list_entities(type: str = "", limit: int = 50) -> str:
+    """Browse all extracted entities, sorted by mention count.
+
+    Args:
+        type: Optional filter: "person", "place", or "org".
+        limit: Maximum results (default 50).
+    """
+    results = client.list_entities(entity_type=type.strip() or None, limit=limit)
+    if not results:
+        return "No entities found. Run extract_entities first."
+    lines = []
+    for e in results:
+        lines.append(f"  [{e['id']}] {e['canonical_name']} ({e['type']}) - {e['mention_count']} mentions")
+    return "Entities:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def entity_stats() -> str:
+    """Summary of extracted entities: counts by type and total mentions."""
+    s = client.entity_stats()
+    parts = [f"Total entities: {s['total_entities']}, Total mentions: {s['total_mentions']}"]
+    for t, count in sorted(s.get("by_type", {}).items()):
+        parts.append(f"  {t}: {count}")
+    return "\n".join(parts)
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

@@ -7,6 +7,7 @@ CONFIG_DIR = Path(
 
 CHROMA_DIR = CONFIG_DIR / "chroma"
 SOURCES_FILE = CONFIG_DIR / "sources.json"
+ENTITIES_DB = CONFIG_DIR / "entities.db"
 
 INCLUDE_EXTENSIONS = {".md", ".txt"}
 

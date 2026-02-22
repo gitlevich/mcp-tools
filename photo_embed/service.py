@@ -124,7 +124,8 @@ async def search_stream(request: Request) -> StreamingResponse:
 
     body = await request.json()
     query = body["query"]
-    top_k = body.get("top_k", 200)
+    top_k = body.get("top_k")
+    score_ratio = body.get("score_ratio")
 
     async def generate():
         queue: asyncio.Queue = asyncio.Queue()
@@ -132,7 +133,7 @@ async def search_stream(request: Request) -> StreamingResponse:
 
         def _run():
             try:
-                for batch in get_index().search_progressive(query, top_k):
+                for batch in get_index().search_progressive(query, top_k, score_ratio=score_ratio):
                     loop.call_soon_threadsafe(queue.put_nowait, batch)
             except Exception as exc:
                 loop.call_soon_threadsafe(queue.put_nowait, exc)
@@ -276,8 +277,9 @@ async def find_similar(request: Request) -> JSONResponse:
         return _LOADING
     body = await request.json()
     path = body["path"]
-    top_k = body.get("top_k", 20)
-    results = await asyncio.to_thread(get_index().find_similar, path, top_k)
+    top_k = body.get("top_k")
+    score_ratio = body.get("score_ratio")
+    results = await asyncio.to_thread(get_index().find_similar, path, top_k, score_ratio=score_ratio)
     return JSONResponse([asdict(r) for r in results])
 
 
@@ -340,7 +342,7 @@ async def find_person_handler(request: Request) -> JSONResponse:
     body = await request.json()
     path = body["path"]
     face_idx = body.get("face_idx", 0)
-    top_k = body.get("top_k", 50)
+    top_k = body.get("top_k")
     results = await asyncio.to_thread(get_index().find_person, path, face_idx, top_k)
     return JSONResponse([asdict(r) for r in results])
 
@@ -357,6 +359,121 @@ async def get_people(request: Request) -> JSONResponse:
     if not _index_ready.is_set():
         return _LOADING
     return JSONResponse(get_index().get_people())
+
+
+# -- entity endpoints --
+
+
+async def extract_entities_handler(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    async with _refresh_lock:
+        with reporter.report("Extracting entities") as r:
+            stats = await asyncio.to_thread(
+                get_index().extract_entities, progress_callback=r.set_progress
+            )
+    return JSONResponse(stats)
+
+
+async def search_entities(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    query = body.get("query", "")
+    entity_type = body.get("type") or None
+    limit = body.get("limit", 20)
+    store = get_index().get_entity_store()
+    results = store.search(query, entity_type=entity_type, limit=limit)
+    return JSONResponse([
+        {"id": e.id, "canonical_name": e.canonical_name, "type": e.type,
+         "mention_count": e.mention_count, "aliases": store.get(e.id).aliases or []}
+        for e in results
+    ])
+
+
+async def get_entity(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    entity_id = int(request.query_params["id"])
+    store = get_index().get_entity_store()
+    entity = store.get(entity_id)
+    if not entity:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    mentions = store.mentions(entity_id, limit=50)
+    return JSONResponse({
+        "id": entity.id,
+        "canonical_name": entity.canonical_name,
+        "type": entity.type,
+        "mention_count": entity.mention_count,
+        "aliases": entity.aliases or [],
+        "mentions": [
+            {"id": m.id, "rel_path": m.rel_path, "start_line": m.start_line,
+             "end_line": m.end_line, "context": m.context, "span_text": m.span_text}
+            for m in mentions
+        ],
+    })
+
+
+async def list_entities(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    entity_type = request.query_params.get("type") or None
+    limit = int(request.query_params.get("limit", "50"))
+    store = get_index().get_entity_store()
+    results = store.list_entities(entity_type=entity_type, limit=limit)
+    return JSONResponse([
+        {"id": e.id, "canonical_name": e.canonical_name, "type": e.type,
+         "mention_count": e.mention_count}
+        for e in results
+    ])
+
+
+async def merge_entities_handler(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    store = get_index().get_entity_store()
+    result = store.merge(body["keep_id"], body["merge_id"])
+    if not result:
+        return JSONResponse({"error": "merge failed"}, status_code=400)
+    return JSONResponse({
+        "id": result.id,
+        "canonical_name": result.canonical_name,
+        "type": result.type,
+        "mention_count": result.mention_count,
+        "aliases": result.aliases or [],
+    })
+
+
+async def rename_entity_handler(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    store = get_index().get_entity_store()
+    result = store.rename(body["entity_id"], body["new_name"])
+    if not result:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({
+        "id": result.id,
+        "canonical_name": result.canonical_name,
+        "aliases": result.aliases or [],
+    })
+
+
+async def delete_entity_handler(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    body = await request.json()
+    store = get_index().get_entity_store()
+    ok = store.delete(body["entity_id"])
+    return JSONResponse({"deleted": ok})
+
+
+async def entity_stats(request: Request) -> JSONResponse:
+    if not _index_ready.is_set():
+        return _LOADING
+    store = get_index().get_entity_store()
+    return JSONResponse(store.stats())
 
 
 THUMBNAIL_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
@@ -390,6 +507,14 @@ routes = [
     Route("/find-person", find_person_handler, methods=["POST"]),
     Route("/batch-label", batch_label, methods=["POST"]),
     Route("/people", get_people, methods=["GET"]),
+    Route("/extract-entities", extract_entities_handler, methods=["POST"]),
+    Route("/search-entities", search_entities, methods=["POST"]),
+    Route("/entity", get_entity, methods=["GET"]),
+    Route("/entities", list_entities, methods=["GET"]),
+    Route("/merge-entities", merge_entities_handler, methods=["POST"]),
+    Route("/rename-entity", rename_entity_handler, methods=["POST"]),
+    Route("/delete-entity", delete_entity_handler, methods=["POST"]),
+    Route("/entity-stats", entity_stats, methods=["GET"]),
     Mount("/thumbnails", StaticFiles(directory=str(THUMBNAIL_PREVIEW_DIR)), name="thumbnails"),
 ]
 

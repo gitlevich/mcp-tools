@@ -67,6 +67,7 @@ def _patch_all(monkeypatch, tmp_path, model_names=("mock-model",)):
     monkeypatch.setattr(config, "METADATA_FILE", cache / "metadata.json")
     monkeypatch.setattr(config, "ANNOTATIONS_FILE", cache / "annotations.json")
     monkeypatch.setattr(config, "FACES_FILE", cache / "faces.json")
+    monkeypatch.setattr(config, "FACES_SCANNED_FILE", cache / "faces_scanned.txt")
     monkeypatch.setattr(config, "THUMBNAIL_MODEL_DIR", cache / "thumbs" / "model")
     monkeypatch.setattr(config, "THUMBNAIL_PREVIEW_DIR", cache / "thumbs" / "preview")
     monkeypatch.setattr(config, "EMBEDDINGS_DIR", cache / "embeddings")
@@ -342,3 +343,242 @@ def test_status_includes_face_data(_dev, tmp_path, monkeypatch):
     assert s["total_faces"] == 10  # 5 images * 2 faces
     assert s["labeled_faces"] == 1
     assert s["people"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: refresh_faces streaming pipeline
+# ---------------------------------------------------------------------------
+
+
+def _mock_face_engine(faces_per_image=2, dim=512):
+    """Return a mock FaceEngine that produces deterministic faces."""
+    rng = np.random.RandomState(99)
+    engine = MagicMock()
+    engine.loaded = True
+
+    call_count = [0]
+
+    def detect_and_embed(source):
+        results = []
+        for j in range(faces_per_image):
+            rec = FaceRecord(
+                image_path=source,
+                face_idx=j,
+                bbox=(0.1, 0.1, 0.5, 0.5),
+                confidence=0.95,
+            )
+            emb = rng.randn(dim).astype(np.float32)
+            emb /= np.linalg.norm(emb)
+            results.append((rec, emb))
+        call_count[0] += 1
+        return results
+
+    engine.detect_and_embed = detect_and_embed
+    engine._call_count = call_count
+    return engine
+
+
+def _setup_face_test(tmp_path, monkeypatch, n_images=5, faces_per_image=2):
+    """Build a PhotoIndex ready for refresh_faces with pre-filter bypassed."""
+    _patch_all(monkeypatch, tmp_path)
+
+    import config
+    from indexer import PhotoIndex
+
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    _make_photos(photos, n_images)
+
+    idx = PhotoIndex(config.CACHE_DIR)
+    idx.add_folder(str(photos))
+    idx.refresh()
+
+    engine = _mock_face_engine(faces_per_image=faces_per_image)
+    idx._face_engine = engine
+    idx._ensure_face_engine = lambda: engine
+    # Bypass CLIP pre-filter so all candidates pass through
+    idx._prefilter_people = lambda candidates, **kw: candidates
+
+    return idx, photos, config, engine
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_faces_streaming(_dev, tmp_path, monkeypatch):
+    """refresh_faces should detect faces and populate records/embeddings."""
+    idx, photos, config, engine = _setup_face_test(
+        tmp_path, monkeypatch, n_images=5, faces_per_image=2
+    )
+
+    stats = idx.refresh_faces()
+
+    assert stats["images_scanned"] == 5
+    assert stats["new_faces"] == 10  # 5 images * 2 faces
+    assert stats["total_faces"] == 10
+    assert len(idx._face_records) == 10
+    assert idx._face_embeddings is not None
+    assert idx._face_embeddings.shape == (10, 512)
+    assert len(idx._face_scanned_paths) == 5
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_faces_progress_callback(_dev, tmp_path, monkeypatch):
+    """Progress callback should be called with (current, total, detail)."""
+    idx, photos, config, engine = _setup_face_test(
+        tmp_path, monkeypatch, n_images=3, faces_per_image=1
+    )
+
+    calls = []
+    idx.refresh_faces(progress_callback=lambda c, t, d: calls.append((c, t, d)))
+
+    assert len(calls) == 3
+    # All calls should have 3 elements and correct total
+    for c, t, d in calls:
+        assert t == 3
+        assert isinstance(d, str)
+    # current should be 1, 2, 3
+    assert [c for c, _, _ in calls] == [1, 2, 3]
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_faces_idempotent(_dev, tmp_path, monkeypatch):
+    """Second refresh_faces call should find nothing new."""
+    idx, photos, config, engine = _setup_face_test(
+        tmp_path, monkeypatch, n_images=3, faces_per_image=1
+    )
+
+    stats1 = idx.refresh_faces()
+    assert stats1["new_faces"] == 3
+
+    stats2 = idx.refresh_faces()
+    assert stats2["new_faces"] == 0
+    assert stats2["images_scanned"] == 0
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_faces_persistence(_dev, tmp_path, monkeypatch):
+    """Face data should survive save/reload with new scanned paths format."""
+    idx, photos, config, engine = _setup_face_test(
+        tmp_path, monkeypatch, n_images=4, faces_per_image=2
+    )
+    idx.refresh_faces()
+
+    # Verify faces_scanned.txt exists on disk
+    scanned_file = config.CACHE_DIR / "faces_scanned.txt"
+    assert scanned_file.exists()
+    lines = [l.strip() for l in scanned_file.read_text().splitlines() if l.strip()]
+    assert len(lines) == 4
+
+    # Reload and verify
+    from indexer import PhotoIndex
+
+    idx2 = PhotoIndex(config.CACHE_DIR)
+    assert len(idx2._face_records) == 8
+    assert idx2._face_embeddings is not None
+    assert idx2._face_embeddings.shape == (8, 512)
+    assert len(idx2._face_scanned_paths) == 4
+
+    # Second refresh should find nothing (pre-filter bypassed on idx2 too)
+    idx2._face_engine = engine
+    idx2._ensure_face_engine = lambda: engine
+    idx2._prefilter_people = lambda candidates, **kw: candidates
+    stats = idx2.refresh_faces()
+    assert stats["new_faces"] == 0
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_faces_buffer_growth(_dev, tmp_path, monkeypatch):
+    """Buffer should grow when more faces found than estimated."""
+    idx, photos, config, engine = _setup_face_test(
+        tmp_path, monkeypatch, n_images=2, faces_per_image=50
+    )
+
+    stats = idx.refresh_faces()
+    assert stats["new_faces"] == 100
+    assert idx._face_embeddings.shape == (100, 512)
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_load_faces_backward_compat(_dev, tmp_path, monkeypatch):
+    """Old-format faces.json with 'scanned' key should load correctly."""
+    _patch_all(monkeypatch, tmp_path)
+
+    import config
+    from indexer import PhotoIndex
+
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    paths = _make_photos(photos, 2)
+
+    idx = PhotoIndex(config.CACHE_DIR)
+    idx.add_folder(str(photos))
+    idx.refresh()
+
+    # Write old-format faces.json with "scanned" key
+    cache = config.CACHE_DIR
+    old_data = {
+        "records": [
+            {
+                "image_path": str(paths[0].resolve()),
+                "face_idx": 0,
+                "bbox": [0.1, 0.2, 0.3, 0.4],
+                "confidence": 0.95,
+                "label": "",
+            }
+        ],
+        "scanned": [str(p.resolve()) for p in paths],
+    }
+    (cache / "faces.json").write_text(json.dumps(old_data))
+
+    rng = np.random.RandomState(42)
+    emb = rng.randn(1, 512).astype(np.float32)
+    (cache / "embeddings").mkdir(parents=True, exist_ok=True)
+    np.save(str(cache / "embeddings" / "faces.npy"), emb)
+
+    # Reload -- should pick up scanned from old JSON
+    idx2 = PhotoIndex(cache)
+    assert len(idx2._face_records) == 1
+    assert len(idx2._face_scanned_paths) == 2
+    assert idx2._face_embeddings is not None
+
+    # refresh_faces should find nothing new (all scanned)
+    engine = _mock_face_engine()
+    idx2._face_engine = engine
+    idx2._ensure_face_engine = lambda: engine
+    stats = idx2.refresh_faces()
+    assert stats["new_faces"] == 0
+
+
+@patch("indexer.get_device", return_value="cpu")
+def test_refresh_faces_detection_failure(_dev, tmp_path, monkeypatch):
+    """Failed detection on one image should not stop scanning."""
+    idx, photos, config, _ = _setup_face_test(
+        tmp_path, monkeypatch, n_images=3, faces_per_image=1
+    )
+
+    call_count = [0]
+
+    def flaky_detect(source):
+        call_count[0] += 1
+        if call_count[0] == 2:
+            raise RuntimeError("simulated crash")
+        rec = FaceRecord(
+            image_path=source,
+            face_idx=0,
+            bbox=(0.1, 0.1, 0.5, 0.5),
+            confidence=0.9,
+        )
+        emb = np.random.randn(512).astype(np.float32)
+        return [(rec, emb)]
+
+    engine = MagicMock()
+    engine.loaded = True
+    engine.detect_and_embed = flaky_detect
+    idx._face_engine = engine
+    idx._ensure_face_engine = lambda: engine
+
+    stats = idx.refresh_faces()
+    # Image 2 failed, but images 1 and 3 should succeed
+    assert stats["new_faces"] == 2
+    assert stats["images_scanned"] == 3
+    # All 3 paths should be marked scanned (even the failed one)
+    assert len(idx._face_scanned_paths) == 3

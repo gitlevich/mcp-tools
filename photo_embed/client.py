@@ -157,3 +157,35 @@ class ServiceClient:
 
     def get_people(self) -> list[dict]:
         return self._get("/people").json()
+
+    # -- entity operations --
+
+    def extract_entities(self) -> dict:
+        return self._post("/extract-entities").json()
+
+    def search_entities(self, query: str, entity_type: str | None = None, limit: int = 20) -> list[dict]:
+        body: dict = {"query": query, "limit": limit}
+        if entity_type:
+            body["type"] = entity_type
+        return self._post("/search-entities", body).json()
+
+    def get_entity(self, entity_id: int) -> dict:
+        return self._get("/entity", {"id": str(entity_id)}).json()
+
+    def list_entities(self, entity_type: str | None = None, limit: int = 50) -> list[dict]:
+        params: dict = {"limit": str(limit)}
+        if entity_type:
+            params["type"] = entity_type
+        return self._get("/entities", params).json()
+
+    def merge_entities(self, keep_id: int, merge_id: int) -> dict:
+        return self._post("/merge-entities", {"keep_id": keep_id, "merge_id": merge_id}).json()
+
+    def rename_entity(self, entity_id: int, new_name: str) -> dict:
+        return self._post("/rename-entity", {"entity_id": entity_id, "new_name": new_name}).json()
+
+    def delete_entity(self, entity_id: int) -> dict:
+        return self._post("/delete-entity", {"entity_id": entity_id}).json()
+
+    def entity_stats(self) -> dict:
+        return self._get("/entity-stats").json()
