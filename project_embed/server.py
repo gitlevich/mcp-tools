@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from activity import ActivityReporter
 
-from config import DEFAULT_TOP_K, PROJECT_ROOT, CHROMA_DIR
+from config import DEFAULT_TOP_K, PROJECT_ROOT, STORE_DIR
 from indexer import CodeIndex
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -22,7 +22,7 @@ _index: CodeIndex | None = None
 def get_index() -> CodeIndex:
     global _index
     if _index is None:
-        _index = CodeIndex(PROJECT_ROOT, CHROMA_DIR)
+        _index = CodeIndex(PROJECT_ROOT, STORE_DIR)
     return _index
 
 

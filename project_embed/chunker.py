@@ -18,12 +18,16 @@ class Chunk:
 
 def _file_type(path: Path) -> str:
     ext = path.suffix.lower()
+    if ext == ".swift":
+        return "swift"
     if ext == ".py":
         return "python"
     if ext in (".ts", ".tsx"):
         return "typescript"
     if ext == ".md":
         return "markdown"
+    if ext in (".json", ".toml", ".yaml", ".yml", ".pbxproj"):
+        return "config"
     return "unknown"
 
 

@@ -12,10 +12,8 @@ def _mock_openai_embeddings(texts: list[str]) -> list[list[float]]:
     """Return deterministic fake embeddings (1536-dim)."""
     results = []
     for i, text in enumerate(texts):
-        # Simple hash-based embedding for deterministic results
         base = hash(text) % 1000 / 1000.0
         vec = [base + (j * 0.001) for j in range(1536)]
-        # Normalize
         norm = sum(v * v for v in vec) ** 0.5
         results.append([v / norm for v in vec])
     return results
@@ -35,9 +33,9 @@ def _make_index(tmp_path: Path) -> CodeIndex:
     """Create a CodeIndex with mocked OpenAI client."""
     project = tmp_path / "project"
     project.mkdir()
-    chroma = tmp_path / "chroma"
+    store = tmp_path / "store"
 
-    index = CodeIndex(project, chroma)
+    index = CodeIndex(project, store)
 
     # Mock OpenAI embeddings
     def fake_create(model, input):
@@ -63,7 +61,7 @@ def test_scan_files_finds_python(tmp_path: Path):
 
     assert ".py" in suffixes
     assert ".md" in suffixes
-    assert ".json" not in suffixes
+    assert ".json" in suffixes
 
 
 def test_scan_files_excludes_venv(tmp_path: Path):
@@ -108,10 +106,10 @@ def test_refresh_detects_changes(tmp_path: Path):
     f.write_text("v1 = True")
     index.refresh()
 
-    count_before = index._collection.count()
+    count_before = index._chunk_count()
 
     # Modify file
-    time.sleep(0.05)  # ensure mtime changes
+    time.sleep(0.05)
     f.write_text("v2 = True\n\ndef new_func():\n    pass\n")
 
     stats = index.refresh()
@@ -127,13 +125,13 @@ def test_refresh_removes_deleted(tmp_path: Path):
     f.write_text("x = 1")
     index.refresh()
 
-    assert index._collection.count() > 0
+    assert index._chunk_count() > 0
 
     f.unlink()
     stats = index.refresh()
 
     assert stats["removed_files"] == 1
-    assert index._collection.count() == 0
+    assert index._chunk_count() == 0
 
 
 def test_full_reindex(tmp_path: Path):

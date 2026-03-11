@@ -36,9 +36,11 @@ def test_chunk_code_splits_on_double_newline():
 
 
 def test_chunk_code_splits_large_segments():
-    # Create two segments each larger than CHUNK_SIZE_CHARS
-    big_a = "# block a\n" + ("x = 1\n" * 400)
-    big_b = "# block b\n" + ("y = 2\n" * 400)
+    # Each segment must exceed CHUNK_SIZE_CHARS on its own
+    repeat = (CHUNK_SIZE_CHARS // len("x = 1\n")) + 1
+    big_a = "# block a\n" + ("x = 1\n" * repeat)
+    big_b = "# block b\n" + ("y = 2\n" * repeat)
+    assert len(big_a) > CHUNK_SIZE_CHARS
     text = big_a + "\n\n" + big_b
 
     chunks = _chunk_code(text)
