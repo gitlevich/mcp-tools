@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 node_modules/
 docs/genesis/.export_state.json
+.specstory/
+project_embed/.cache/
+mcp-tools.code-workspace

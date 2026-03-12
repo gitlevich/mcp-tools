@@ -11,4 +11,4 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [tool.setuptools]
-py-modules = ["config", "rename_python", "rename_ts", "server"]
+py-modules = ["config", "rename_python", "rename_swift", "rename_ts", "server"]

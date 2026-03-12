@@ -6,15 +6,12 @@ Auto-launches the service if it's not running.
 import logging
 import os
 import subprocess
-import sys
 import time
-from pathlib import Path
 
 import httpx
 
 from config import (
     SERVICE_HOST,
-    SERVICE_PID_FILE,
     SERVICE_PORT,
     SERVICE_STARTUP_TIMEOUT,
 )
@@ -38,11 +35,16 @@ class ServiceClient:
         if self._is_alive():
             return
 
-        logger.info("Service not running, launching...")
-        service_script = Path(__file__).resolve().parent / "service.py"
+        service_dir = os.environ.get("PHOTO_EMBED_SERVICE_DIR")
+        if not service_dir:
+            raise RuntimeError(
+                "Service not running and PHOTO_EMBED_SERVICE_DIR not set"
+            )
+
+        logger.info("Service not running, launching via up.sh...")
         subprocess.Popen(
-            [sys.executable, str(service_script)],
-            cwd=str(service_script.parent),
+            ["bash", "up.sh"],
+            cwd=service_dir,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

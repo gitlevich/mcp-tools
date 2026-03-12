@@ -6,13 +6,16 @@ TSCONFIG_PATH = Path(os.environ.get("TSCONFIG_PATH", PROJECT_ROOT / "frontend" /
 
 PYTHON_EXTENSIONS = {".py"}
 TYPESCRIPT_EXTENSIONS = {".ts", ".tsx"}
+SWIFT_EXTENSIONS = {".swift"}
 
 
 def detect_language(file_path: str) -> str:
-    """Return 'python' or 'typescript'. Raises ValueError for unsupported."""
+    """Return 'python', 'typescript', or 'swift'. Raises ValueError for unsupported."""
     suffix = Path(file_path).suffix.lower()
     if suffix in PYTHON_EXTENSIONS:
         return "python"
     if suffix in TYPESCRIPT_EXTENSIONS:
         return "typescript"
+    if suffix in SWIFT_EXTENSIONS:
+        return "swift"
     raise ValueError(f"Unsupported file extension: {suffix}")

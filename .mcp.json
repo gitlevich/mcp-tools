@@ -18,7 +18,9 @@
       "type": "stdio",
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "--directory", "/Users/vlad/Attention Lab/mcp-tools/photo_embed", "python", "server.py"],
-      "env": {}
+      "env": {
+        "PHOTO_EMBED_SERVICE_DIR": "/Users/vlad/Attention Lab/sense-maker"
+      }
     },
     "thought-index": {
       "type": "stdio",

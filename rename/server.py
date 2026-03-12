@@ -12,6 +12,8 @@ from activity import ActivityReporter
 from config import PROJECT_ROOT, TSCONFIG_PATH, detect_language
 from rename_python import RenameResult as PyResult
 from rename_python import rename_python
+from rename_swift import RenameResult as SwiftResult
+from rename_swift import rename_swift
 from rename_ts import RenameResult as TsResult
 from rename_ts import rename_ts
 
@@ -26,7 +28,7 @@ reporter = ActivityReporter("rename")
 def rename_symbol(file_path: str, old_name: str, new_name: str) -> dict:
     """Rename a symbol (function, class, variable, interface) across the codebase.
 
-    AST-aware: Python uses Rope, TypeScript uses ts-morph.
+    AST-aware: Python uses Rope, TypeScript uses ts-morph, Swift uses SourceKit-LSP.
     Applies changes directly to disk — one call, all references updated.
 
     Args:
@@ -44,13 +46,15 @@ def rename_symbol(file_path: str, old_name: str, new_name: str) -> dict:
         )
 
         if lang == "python":
-            result: PyResult | TsResult = rename_python(
+            result: PyResult | TsResult | SwiftResult = rename_python(
                 file_path, old_name, new_name, str(PROJECT_ROOT)
             )
         elif lang == "typescript":
             result = rename_ts(
                 file_path, old_name, new_name, str(TSCONFIG_PATH)
             )
+        elif lang == "swift":
+            result = rename_swift(file_path, old_name, new_name)
         else:
             raise ValueError(f"Unsupported language: {lang}")
 
