@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
+from urllib.parse import unquote
 
-PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", Path.cwd())).resolve()
-STORE_DIR = Path(os.environ.get("STORE_DIR", PROJECT_ROOT / ".cache" / "project-embed")).resolve()
+PROJECT_ROOT = Path(unquote(os.environ.get("PROJECT_ROOT", str(Path.cwd())))).resolve()
+STORE_DIR = Path(unquote(os.environ.get("STORE_DIR", str(PROJECT_ROOT / ".cache" / "project-embed")))).resolve()
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local").strip().lower()
 
 INCLUDE_EXTENSIONS = {

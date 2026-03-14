@@ -5,6 +5,7 @@ No torch, numpy, or PIL imports in this process.
 """
 
 import logging
+from urllib.parse import unquote
 
 from mcp.server.fastmcp import FastMCP
 
@@ -45,7 +46,7 @@ def find_similar(path: str, top_k: int = 20) -> str:
         path: Absolute path to the source image (must be in the index).
         top_k: Number of results to return (default 20).
     """
-    return client.find_similar(path, top_k)
+    return client.find_similar(unquote(path), top_k)
 
 
 @mcp.tool()
@@ -59,7 +60,7 @@ def annotate(path: str, text: str) -> str:
         path: Absolute path to the image file.
         text: Annotation text (e.g., "my father at the beach", "graduation 2020").
     """
-    return client.annotate(path, text)
+    return client.annotate(unquote(path), text)
 
 
 @mcp.tool()
@@ -69,7 +70,7 @@ def get_annotations(path: str) -> str:
     Args:
         path: Absolute path to the image file.
     """
-    annotations = client.get_annotations(path)
+    annotations = client.get_annotations(unquote(path))
     if not annotations:
         return "No annotations for this image."
     return "\n".join(f"- {a}" for a in annotations)
@@ -83,7 +84,7 @@ def remove_annotation(path: str, text: str) -> str:
         path: Absolute path to the image file.
         text: The exact annotation text to remove.
     """
-    return client.remove_annotation(path, text)
+    return client.remove_annotation(unquote(path), text)
 
 
 @mcp.tool()
@@ -96,7 +97,7 @@ def add_folder(path: str) -> str:
     Args:
         path: Absolute path to a folder containing photos.
     """
-    return client.add_folder(path)
+    return client.add_folder(unquote(path))
 
 
 @mcp.tool()
@@ -121,7 +122,7 @@ def remove_folder(path: str) -> str:
     Args:
         path: Path to the folder to remove.
     """
-    return client.remove_folder(path)
+    return client.remove_folder(unquote(path))
 
 
 @mcp.tool()
@@ -144,7 +145,7 @@ def connect_photos_library(library_path: str = "") -> str:
     Args:
         library_path: Path to .photoslibrary bundle. Empty string uses the default library.
     """
-    return client.connect_photos_library(library_path or None)
+    return client.connect_photos_library(unquote(library_path) if library_path else None)
 
 
 @mcp.tool()
@@ -253,7 +254,7 @@ def label_face(path: str, face_idx: int, label: str) -> str:
         face_idx: Index of the face within the image (from get_faces).
         label: Person's name.
     """
-    return client.label_face(path, face_idx, label)
+    return client.label_face(unquote(path), face_idx, label)
 
 
 @mcp.tool()
@@ -268,7 +269,7 @@ def find_person(path: str, face_idx: int = 0, top_k: int = 50) -> str:
         face_idx: Index of the face in that image (default 0 for single-face images).
         top_k: Number of results to return (default 50).
     """
-    return client.find_person(path, face_idx, top_k)
+    return client.find_person(unquote(path), face_idx, top_k)
 
 
 # -- entity resolution tools --

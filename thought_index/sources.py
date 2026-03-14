@@ -2,6 +2,7 @@ import json
 import logging
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from urllib.parse import unquote
 
 import config as cfg
 
@@ -42,7 +43,7 @@ def _unique_label(path: Path, existing_labels: set[str]) -> str:
 
 
 def add_source(folder_path: str) -> Source:
-    path = Path(folder_path).resolve()
+    path = Path(unquote(folder_path)).resolve()
     if not path.is_dir():
         raise ValueError(f"Not a directory: {path}")
 

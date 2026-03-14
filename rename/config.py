@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
+from urllib.parse import unquote
 
-PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", Path.cwd())).resolve()
-TSCONFIG_PATH = Path(os.environ.get("TSCONFIG_PATH", PROJECT_ROOT / "frontend" / "tsconfig.json"))
+PROJECT_ROOT = Path(unquote(os.environ.get("PROJECT_ROOT", str(Path.cwd())))).resolve()
+TSCONFIG_PATH = Path(unquote(os.environ.get("TSCONFIG_PATH", str(PROJECT_ROOT / "frontend" / "tsconfig.json"))))
 
 PYTHON_EXTENSIONS = {".py"}
 TYPESCRIPT_EXTENSIONS = {".ts", ".tsx"}

@@ -3,6 +3,7 @@
 import logging
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from mcp.server.fastmcp import FastMCP
 
@@ -40,6 +41,7 @@ def rename_symbol(file_path: str, old_name: str, new_name: str) -> dict:
         dict with old_name, new_name, and files_changed (list of paths).
     """
     with reporter.report(f"Renaming {old_name} -> {new_name}"):
+        file_path = unquote(file_path)
         lang = detect_language(file_path)
         logger.info(
             "Renaming %s -> %s in %s (%s)", old_name, new_name, file_path, lang

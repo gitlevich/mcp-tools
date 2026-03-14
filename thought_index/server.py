@@ -1,6 +1,7 @@
 import logging
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from mcp.server.fastmcp import FastMCP
 
@@ -77,7 +78,7 @@ def add_source_folder(path: str = "") -> str:
         path: Absolute path to the folder. If empty, opens a Finder dialog.
     """
     with reporter.report("Adding source folder") as r:
-        folder = path.strip() or pick_folder()
+        folder = unquote(path.strip()) or pick_folder()
         if not folder:
             return "No folder selected."
 
