@@ -1,10 +1,13 @@
+import json
+import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from rename_swift import RenameResult, find_project_root, find_symbol_position, rename_swift
+from rename_swift import LSPClient, RenameResult, find_project_root, find_symbol_position, rename_swift
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +69,61 @@ def test_find_project_root_not_found(tmp_path: Path):
     lonely.write_text("let x = 1\n")
     with pytest.raises(ValueError, match="No Package.swift"):
         find_project_root(str(lonely))
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for LSPClient
+# ---------------------------------------------------------------------------
+
+def _make_lsp_message(body: dict) -> bytes:
+    payload = json.dumps(body).encode()
+    return f"Content-Length: {len(payload)}\r\n\r\n".encode() + payload
+
+
+def test_recv_timeout():
+    """recv raises TimeoutError when server doesn't respond."""
+    proc = subprocess.Popen(
+        ["cat"],  # cat will just wait for stdin, never writes to stdout
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        client = LSPClient(proc)
+        with pytest.raises(TimeoutError, match="did not respond"):
+            client.recv(expected_id=1, timeout=0.1)
+    finally:
+        proc.terminate()
+        proc.wait()
+
+
+def test_handle_workspace_configuration():
+    """Server workspace/configuration requests get an array of empty objects."""
+    proc = MagicMock()
+    proc.stdout = MagicMock()
+    proc.stdin = MagicMock()
+
+    # Capture what gets written to stdin
+    written = bytearray()
+    proc.stdin.write = lambda data: written.extend(data)
+    proc.stdin.flush = MagicMock()
+
+    client = LSPClient(proc)
+    msg = {
+        "jsonrpc": "2.0",
+        "id": 99,
+        "method": "workspace/configuration",
+        "params": {"items": [{"section": "swift"}, {"section": "editor"}]},
+    }
+    client._handle_server_request(msg)
+
+    # Parse the JSON-RPC response from what was written
+    raw = written.decode()
+    # Skip Content-Length header
+    body_start = raw.index("\r\n\r\n") + 4
+    response = json.loads(raw[body_start:])
+    assert response["id"] == 99
+    assert response["result"] == [{}, {}]
 
 
 # ---------------------------------------------------------------------------

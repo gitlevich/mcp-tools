@@ -8,8 +8,8 @@ For SPM packages, a swift-build is triggered automatically to ensure the index e
 import json
 import logging
 import re
+import select
 import subprocess
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,11 +62,18 @@ def find_symbol_position(source: str, name: str) -> tuple[int, int]:
 # ---------------------------------------------------------------------------
 
 class LSPClient:
-    """Thin JSON-RPC client for a stdio-based LSP server."""
+    """Thin JSON-RPC client for a stdio-based LSP server.
+
+    Uses os.read() with its own byte buffer to avoid the classic problem
+    of mixing select() with Python's buffered I/O (where select reports
+    "not ready" while data sits in Python's internal buffer).
+    """
 
     def __init__(self, proc: subprocess.Popen):
         self._proc = proc
         self._id = 0
+        self._fd = proc.stdout.fileno()
+        self._buf = b""
 
     def _next_id(self) -> int:
         self._id += 1
@@ -84,39 +91,82 @@ class LSPClient:
         self._proc.stdin.flush()
         return None if notify else rid
 
-    def recv(self, expected_id: int | None = None) -> dict:
-        """Read the next JSON-RPC response, skipping notifications."""
-        while True:
-            headers = {}
-            while True:
-                line = self._proc.stdout.readline()
-                if not line:
-                    raise RuntimeError("sourcekit-lsp closed stdout unexpectedly")
-                line = line.decode("utf-8").strip()
-                if line == "":
-                    break
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    headers[key.strip()] = value.strip()
+    def recv(self, expected_id: int | None = None, timeout: float = 30.0) -> dict:
+        """Read the next JSON-RPC response, skipping notifications.
 
-            length = int(headers["Content-Length"])
-            body = self._proc.stdout.read(length)
-            msg = json.loads(body)
+        Raises TimeoutError if no response arrives within *timeout* seconds.
+        """
+        while True:
+            msg = self._read_message(timeout)
 
             # Skip server-initiated notifications and requests
             if "id" not in msg or (expected_id is not None and msg.get("id") != expected_id):
                 if "id" in msg and "method" in msg:
-                    # Server request — send empty response to unblock it
-                    resp = json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": None})
-                    header = f"Content-Length: {len(resp)}\r\n\r\n"
-                    self._proc.stdin.write(header.encode())
-                    self._proc.stdin.write(resp.encode())
-                    self._proc.stdin.flush()
+                    self._handle_server_request(msg)
                 if "id" not in msg:
                     continue
                 if expected_id is not None and msg.get("id") != expected_id:
                     continue
             return msg
+
+    def _fill_buf(self, timeout: float) -> None:
+        """Read more bytes from the fd into the buffer, respecting timeout."""
+        ready, _, _ = select.select([self._fd], [], [], timeout)
+        if not ready:
+            raise TimeoutError(
+                f"sourcekit-lsp did not respond within {timeout}s"
+            )
+        import os
+        chunk = os.read(self._fd, 65536)
+        if not chunk:
+            raise RuntimeError("sourcekit-lsp closed stdout unexpectedly")
+        self._buf += chunk
+
+    def _read_until(self, delimiter: bytes, timeout: float) -> bytes:
+        """Read from the buffer until delimiter is found."""
+        while delimiter not in self._buf:
+            self._fill_buf(timeout)
+        idx = self._buf.index(delimiter) + len(delimiter)
+        result = self._buf[:idx]
+        self._buf = self._buf[idx:]
+        return result
+
+    def _read_exactly(self, n: int, timeout: float) -> bytes:
+        """Read exactly n bytes from the buffer."""
+        while len(self._buf) < n:
+            self._fill_buf(timeout)
+        result = self._buf[:n]
+        self._buf = self._buf[n:]
+        return result
+
+    def _read_message(self, timeout: float) -> dict:
+        """Read a single JSON-RPC message from stdout with timeout."""
+        # Read headers until empty line (double CRLF)
+        raw_headers = self._read_until(b"\r\n\r\n", timeout)
+        headers: dict[str, str] = {}
+        for line in raw_headers.decode("utf-8").strip().split("\r\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
+                headers[key.strip()] = value.strip()
+
+        length = int(headers["Content-Length"])
+        body = self._read_exactly(length, timeout)
+        return json.loads(body)
+
+    def _handle_server_request(self, msg: dict) -> None:
+        """Respond to server-initiated requests."""
+        method = msg.get("method", "")
+        if method == "workspace/configuration":
+            # Return empty config for each requested item
+            items = msg.get("params", {}).get("items", [])
+            result = [{} for _ in items]
+        else:
+            result = None
+        resp = json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result})
+        header = f"Content-Length: {len(resp)}\r\n\r\n"
+        self._proc.stdin.write(header.encode())
+        self._proc.stdin.write(resp.encode())
+        self._proc.stdin.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -190,11 +240,17 @@ def _do_rename(
     new_name: str,
 ) -> list[str]:
     """Run the LSP initialize → rename → apply flow. Returns changed file paths."""
-    # Initialize
+    # Initialize with rename capabilities
     rid = client.send("initialize", {
         "processId": None,
         "rootUri": root_uri,
-        "capabilities": {},
+        "capabilities": {
+            "textDocument": {
+                "rename": {
+                    "prepareSupport": True,
+                },
+            },
+        },
     })
     client.recv(rid)
     client.send("initialized", {}, notify=True)
@@ -209,8 +265,27 @@ def _do_rename(
         },
     }, notify=True)
 
-    # Wait for background indexer to pick up cross-file references
-    time.sleep(2)
+    # Wait for background indexer to finish (replaces hardcoded sleep)
+    rid = client.send("workspace/synchronize", {"index": True})
+    client.recv(rid, timeout=60)
+
+    # Validate the rename is possible at this position
+    rid = client.send("textDocument/prepareRename", {
+        "textDocument": {"uri": file_uri},
+        "position": {"line": line, "character": character},
+    })
+    prepare_response = client.recv(rid)
+
+    if "error" in prepare_response:
+        err = prepare_response["error"]
+        raise RuntimeError(
+            f"Cannot rename symbol at {file_uri}:{line}:{character}: "
+            f"{err.get('message', str(err))}"
+        )
+    if prepare_response.get("result") is None:
+        raise RuntimeError(
+            f"No renameable symbol found at {file_uri}:{line}:{character}"
+        )
 
     # Rename
     rid = client.send("textDocument/rename", {
@@ -218,7 +293,7 @@ def _do_rename(
         "position": {"line": line, "character": character},
         "newName": new_name,
     })
-    response = client.recv(rid)
+    response = client.recv(rid, timeout=60)
 
     if "error" in response:
         raise RuntimeError(response["error"].get("message", str(response["error"])))
