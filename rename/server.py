@@ -17,7 +17,16 @@ from rename_swift import rename_swift
 from rename_ts import RenameResult as TsResult
 from rename_ts import rename_ts
 
-logging.basicConfig(level=logging.INFO)
+_log_dir = Path("/tmp/mcp-tools")
+_log_dir.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(_log_dir / "rename.log"),
+    ],
+)
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("rename")

@@ -89,6 +89,8 @@ class LSPClient:
         self._proc.stdin.write(header.encode())
         self._proc.stdin.write(payload.encode())
         self._proc.stdin.flush()
+        kind = "notify" if notify else f"request id={msg.get('id')}"
+        logger.debug("LSP send %s: %s", kind, method)
         return None if notify else rid
 
     def recv(self, expected_id: int | None = None, timeout: float = 30.0) -> dict:
@@ -102,11 +104,23 @@ class LSPClient:
             # Skip server-initiated notifications and requests
             if "id" not in msg or (expected_id is not None and msg.get("id") != expected_id):
                 if "id" in msg and "method" in msg:
+                    logger.debug("LSP server request: %s", msg.get("method"))
                     self._handle_server_request(msg)
                 if "id" not in msg:
+                    logger.debug("LSP notification: %s", msg.get("method"))
                     continue
                 if expected_id is not None and msg.get("id") != expected_id:
+                    logger.debug(
+                        "LSP skipping response id=%s (waiting for %s)",
+                        msg.get("id"), expected_id,
+                    )
                     continue
+            if "error" in msg:
+                logger.debug("LSP response id=%s error: %s", msg.get("id"), msg["error"])
+            else:
+                result = msg.get("result")
+                summary = json.dumps(result)[:200] if result is not None else "null"
+                logger.debug("LSP response id=%s result: %s", msg.get("id"), summary)
             return msg
 
     def _fill_buf(self, timeout: float) -> None:
@@ -177,14 +191,20 @@ def _ensure_index(project_root: Path) -> None:
     """Build SPM packages so the index exists for cross-file rename."""
     package_swift = project_root / "Package.swift"
     if not package_swift.exists():
-        return  # Xcode project — user must build in Xcode
-    logger.info("Building SPM package at %s to ensure index", project_root)
-    subprocess.run(
+        logger.info("Xcode project detected — skipping swift build (user must build in Xcode)")
+        return
+    logger.info("Building SPM package at %s to ensure index...", project_root)
+    result = subprocess.run(
         ["swift", "build"],
         cwd=str(project_root),
         capture_output=True,
         timeout=120,
     )
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace").strip()
+        logger.warning("swift build failed (exit %d): %s", result.returncode, stderr[-500:])
+    else:
+        logger.info("swift build succeeded")
 
 
 def rename_swift(
@@ -195,13 +215,19 @@ def rename_swift(
     """Rename a Swift symbol across the project via SourceKit-LSP."""
     abs_path = Path(file_path).resolve()
     project_root = find_project_root(file_path)
+    logger.info("Project root: %s", project_root)
     _ensure_index(project_root)
 
     source = abs_path.read_text()
     line, character = find_symbol_position(source, old_name)
+    logger.info(
+        "Symbol '%s' found at %s:%d:%d",
+        old_name, abs_path, line, character,
+    )
 
     file_uri = abs_path.as_uri()
     root_uri = project_root.as_uri()
+    logger.info("root_uri=%s  file_uri=%s", root_uri, file_uri)
 
     proc = subprocess.Popen(
         [SOURCEKIT_LSP],
@@ -266,8 +292,10 @@ def _do_rename(
     }, notify=True)
 
     # Wait for background indexer to finish (replaces hardcoded sleep)
+    logger.info("Waiting for index synchronization...")
     rid = client.send("workspace/synchronize", {"index": True})
     client.recv(rid, timeout=60)
+    logger.info("Index synchronized")
 
     # Validate the rename is possible at this position
     rid = client.send("textDocument/prepareRename", {
@@ -275,6 +303,7 @@ def _do_rename(
         "position": {"line": line, "character": character},
     })
     prepare_response = client.recv(rid)
+    prepare_result = prepare_response.get("result")
 
     if "error" in prepare_response:
         err = prepare_response["error"]
@@ -282,10 +311,15 @@ def _do_rename(
             f"Cannot rename symbol at {file_uri}:{line}:{character}: "
             f"{err.get('message', str(err))}"
         )
-    if prepare_response.get("result") is None:
+    if prepare_result is None:
         raise RuntimeError(
             f"No renameable symbol found at {file_uri}:{line}:{character}"
         )
+    logger.info(
+        "prepareRename confirmed: placeholder=%s, range=%s",
+        prepare_result.get("placeholder"),
+        prepare_result.get("range"),
+    )
 
     # Rename
     rid = client.send("textDocument/rename", {
@@ -301,6 +335,16 @@ def _do_rename(
     workspace_edit = response.get("result")
     if workspace_edit is None:
         raise RuntimeError(f"Symbol '{new_name}' rename returned no edits")
+
+    # Log the edit summary
+    changes = workspace_edit.get("changes", {})
+    if not changes and "documentChanges" in workspace_edit:
+        changes = {
+            dc["textDocument"]["uri"]: dc.get("edits", [])
+            for dc in workspace_edit["documentChanges"]
+        }
+    for uri, edits in changes.items():
+        logger.info("  %s: %d edits", uri, len(edits))
 
     return _apply_workspace_edit(workspace_edit)
 
